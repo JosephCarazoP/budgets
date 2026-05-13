@@ -1,0 +1,18 @@
+:root { font-family: Arial, sans-serif; color-scheme: light; }
+body { margin: 0; background: #f6f7fb; color: #1e1e1e; }
+header { background: #293241; color: #fff; padding: 1rem 1.5rem; }
+main { max-width: 1100px; margin: 1rem auto; padding: 0 1rem; display: grid; gap: 1rem; }
+.card { background: #fff; border-radius: 12px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: .5rem; }
+input, select, button { padding: .6rem; border-radius: 8px; border: 1px solid #d0d4dc; }
+button { background: #3d5a80; color: #fff; cursor: pointer; border: none; }
+button:hover { background: #2f4766; }
+.source, .category { border: 1px solid #e2e6ee; border-radius: 10px; padding: .8rem; margin-bottom: .7rem; }
+.row { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.small { color: #667; font-size: .9rem; }
+.progress { height: 10px; background: #e9edf3; border-radius: 20px; overflow: hidden; }
+.progress > span { display:block; height:100%; background:#2a9d8f; }
+.distribution { margin-top: .6rem; }
+.distribution form { display:flex; gap:.5rem; flex-wrap: wrap; }
+.summary { display:grid; grid-template-columns: repeat(auto-fit,minmax(170px,1fr)); gap:.6rem; }
+.summary > div { background:#eef2f9; border-radius:8px; padding:.6rem; }

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestor de Presupuestos por Fuente</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Gestor de Presupuestos por Fuente</h1>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Nueva fuente de ingreso</h2>
+      <form id="source-form" class="grid">
+        <input id="source-name" placeholder="Nombre (Beca INA)" required />
+        <input id="source-amount" type="number" min="0" step="0.01" placeholder="Monto total" required />
+        <input id="source-date" type="date" required />
+        <select id="source-status">
+          <option value="pendiente">Pendiente</option>
+          <option value="recibido">Recibido</option>
+        </select>
+        <button type="submit">Crear fuente</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Registrar gasto</h2>
+      <form id="expense-form" class="grid">
+        <select id="expense-source" required></select>
+        <input id="expense-category" placeholder="Categoría" required />
+        <input id="expense-amount" type="number" min="0.01" step="0.01" placeholder="Monto" required />
+        <input id="expense-desc" placeholder="Descripción" required />
+        <input id="expense-date" type="date" required />
+        <button type="submit">Agregar gasto</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Resumen financiero</h2>
+      <div id="summary" class="summary"></div>
+    </section>
+
+    <section class="card">
+      <h2>Fuentes</h2>
+      <div id="sources"></div>
+    </section>
+
+    <section class="card">
+      <h2>Categorías (consolidado)</h2>
+      <div id="categories"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
