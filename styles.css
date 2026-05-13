@@ -858,6 +858,273 @@ details[open] > summary::before { transform: rotate(90deg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
 
 /* ============================================================
+   CATEGORY SUMMARY (dashboard)
+   ============================================================ */
+
+.cat-summary-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 90px 90px 90px;
+  align-items: center;
+  gap: .75rem;
+  padding: .7rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  transition: background .1s;
+}
+
+.cat-summary-row:last-child { border-bottom: none; }
+.cat-summary-row:hover { background: var(--bg-alt); }
+
+.cat-sum-name {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .875rem;
+  font-weight: 600;
+}
+
+.cat-sum-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.cat-sum-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-alt);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.cat-sum-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width .4s ease;
+}
+
+.cat-sum-pct {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--text-3);
+  min-width: 30px;
+  text-align: right;
+}
+
+.cat-sum-col {
+  text-align: right;
+  font-size: .8rem;
+}
+
+.cat-sum-col .label { font-size: .68rem; color: var(--text-3); font-weight: 500; margin-bottom: .1rem; }
+.cat-sum-col .val   { font-weight: 600; color: var(--text); }
+.cat-sum-col .val.spent { color: var(--danger); }
+.cat-sum-col .val.remaining { color: var(--success); }
+.cat-sum-col .val.over { color: var(--danger); }
+
+.cat-summary-header {
+  display: grid;
+  grid-template-columns: 180px 1fr 90px 90px 90px;
+  gap: .75rem;
+  padding: .5rem 1.25rem;
+  font-size: .68rem;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.badge-count {
+  font-size: .72rem;
+  font-weight: 600;
+  background: var(--bg-alt);
+  color: var(--text-2);
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+/* ============================================================
+   CALCULATOR FAB
+   ============================================================ */
+
+.calc-fab {
+  position: fixed;
+  bottom: 1.75rem;
+  right: 1.75rem;
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(0,0,0,.22);
+  z-index: 500;
+  transition: transform .18s, box-shadow .18s, background .15s;
+}
+
+.calc-fab:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 20px rgba(0,0,0,.28);
+}
+
+.calc-fab:active { transform: scale(.96); }
+
+/* ============================================================
+   CALCULATOR PANEL
+   ============================================================ */
+
+.calc-panel {
+  position: fixed;
+  bottom: 6rem;
+  right: 1.75rem;
+  width: 300px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.18);
+  z-index: 499;
+  overflow: hidden;
+  animation: calcPop .2s cubic-bezier(.34,1.56,.64,1);
+  transition: background .2s;
+}
+
+@keyframes calcPop {
+  from { opacity: 0; transform: scale(.9) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.calc-drag-handle {
+  width: 36px; height: 4px;
+  background: var(--border);
+  border-radius: 99px;
+  margin: .6rem auto .2rem;
+}
+
+.calc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .25rem .9rem .5rem;
+}
+
+.calc-title {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.calc-screen {
+  background: var(--bg-alt);
+  margin: 0 .75rem .6rem;
+  border-radius: 12px;
+  padding: .75rem 1rem;
+  min-height: 76px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: .2rem;
+  border: 1px solid var(--border);
+}
+
+.calc-expr {
+  font-size: .8rem;
+  color: var(--text-3);
+  min-height: 1.1rem;
+  word-break: break-all;
+  text-align: right;
+}
+
+.calc-display {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -.04em;
+  color: var(--text);
+  word-break: break-all;
+  text-align: right;
+  line-height: 1.1;
+}
+
+.calc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .4rem;
+  padding: 0 .75rem .75rem;
+}
+
+.calc-btn {
+  height: 58px;
+  border-radius: 12px;
+  border: none;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-family: 'Geist', system-ui, sans-serif;
+  cursor: pointer;
+  transition: opacity .1s, transform .1s, background .15s;
+  background: var(--bg-alt);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calc-btn:hover   { opacity: .8; }
+.calc-btn:active  { transform: scale(.93); }
+
+.calc-btn.span2   { grid-column: span 2; }
+
+.calc-btn.calc-op {
+  background: var(--primary-muted);
+  color: var(--primary);
+}
+
+.calc-btn.calc-fn {
+  background: var(--bg-alt);
+  color: var(--text-2);
+  font-size: .9rem;
+}
+
+.calc-btn.calc-eq {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 1.2rem;
+}
+
+/* ============================================================
+   MOBILE — CALCULATOR
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .calc-fab {
+    bottom: 5.5rem;
+    right: 1rem;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
+  }
+
+  .calc-panel {
+    bottom: 0;
+    right: 0;
+    left: 0;
+    width: 100%;
+    border-radius: 20px 20px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, .5rem);
+  }
+
+  .calc-grid { gap: .35rem; padding: 0 .6rem .6rem; }
+  .calc-btn { height: 62px; }
+  .cat-summary-header,
+  .cat-summary-row { grid-template-columns: 140px 1fr 80px 80px; }
+  .cat-sum-col:nth-child(4) { display: none; }
+  .cat-summary-header span:nth-child(4) { display: none; }
+}
+
+/* ============================================================
    MOBILE RESPONSIVE  ≤ 768px
    ============================================================ */
 
