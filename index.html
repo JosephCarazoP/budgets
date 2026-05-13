@@ -1,55 +1,67 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gestor de Presupuestos por Fuente</title>
+  <title>Budget Flow</title>
   <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <header>
-    <h1>Gestor de Presupuestos por Fuente</h1>
+  <header class="topbar">
+    <div>
+      <h1>Budget Flow</h1>
+      <p>Gestor de presupuestos por fuente</p>
+    </div>
+    <button id="theme-toggle" class="ghost">🌙 Dark mode</button>
   </header>
 
-  <main>
-    <section class="card">
-      <h2>Nueva fuente de ingreso</h2>
-      <form id="source-form" class="grid">
-        <input id="source-name" placeholder="Nombre (Beca INA)" required />
-        <input id="source-amount" type="number" min="0" step="0.01" placeholder="Monto total" required />
+  <main class="layout">
+    <section class="panel kpis" id="kpis"></section>
+
+    <section class="panel">
+      <h2>Fuentes de ingreso (CRUD)</h2>
+      <form id="source-form" class="grid grid-5">
+        <input id="source-name" placeholder="Nombre" required />
+        <input id="source-amount" type="number" min="0" step="0.01" placeholder="Monto" required />
         <input id="source-date" type="date" required />
-        <select id="source-status">
-          <option value="pendiente">Pendiente</option>
-          <option value="recibido">Recibido</option>
-        </select>
-        <button type="submit">Crear fuente</button>
+        <select id="source-status"><option value="pendiente">Pendiente</option><option value="recibido">Recibido</option></select>
+        <button type="submit">Guardar</button>
       </form>
+      <div id="sources"></div>
     </section>
 
-    <section class="card">
+    <section class="panel">
+      <h2>Categorías</h2>
+      <form id="category-form" class="grid grid-3">
+        <input id="category-name" placeholder="Nueva categoría" required />
+        <input id="category-color" type="color" value="#3b82f6" />
+        <button type="submit">Crear categoría</button>
+      </form>
+      <div id="category-list" class="chips"></div>
+    </section>
+
+    <section class="panel">
       <h2>Registrar gasto</h2>
-      <form id="expense-form" class="grid">
+      <form id="expense-form" class="grid grid-5">
         <select id="expense-source" required></select>
-        <input id="expense-category" placeholder="Categoría" required />
+        <select id="expense-category" required></select>
         <input id="expense-amount" type="number" min="0.01" step="0.01" placeholder="Monto" required />
         <input id="expense-desc" placeholder="Descripción" required />
-        <input id="expense-date" type="date" required />
         <button type="submit">Agregar gasto</button>
       </form>
     </section>
 
-    <section class="card">
-      <h2>Resumen financiero</h2>
-      <div id="summary" class="summary"></div>
+    <section class="panel">
+      <h2>Dashboard</h2>
+      <div class="grid grid-2">
+        <div><canvas id="chart-categories"></canvas></div>
+        <div><canvas id="chart-balance"></canvas></div>
+      </div>
     </section>
 
-    <section class="card">
-      <h2>Fuentes</h2>
-      <div id="sources"></div>
-    </section>
-
-    <section class="card">
-      <h2>Categorías (consolidado)</h2>
+    <section class="panel">
+      <h2>Consolidado por categorías</h2>
       <div id="categories"></div>
     </section>
   </main>
