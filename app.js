@@ -535,6 +535,7 @@ function renderTab(tab) {
     case 'dashboard':
       renderKPIs();
       renderCharts();
+      renderCatSummary();
       renderRecentExpenses();
       break;
     case 'sources':
@@ -558,6 +559,171 @@ function renderAll() {
   renderFilters();
   renderCategories();
   save();
+}
+
+/* ============================================================
+   CALCULATOR
+   ============================================================ */
+
+const calcState = { expr: '', result: '0', justEvaled: false };
+
+function calcRender() {
+  $('calc-expr').textContent    = calcState.expr;
+  $('calc-display').textContent = calcState.result;
+}
+
+function calcInput(val) {
+  if (calcState.justEvaled && !'+-×÷'.includes(val)) {
+    calcState.expr = ''; calcState.result = '0';
+  }
+  calcState.justEvaled = false;
+  const ops = ['+', '−', '×', '÷'];
+  const lastChar = calcState.expr.slice(-1);
+  if (ops.includes(val) && ops.includes(lastChar)) return; // no double ops
+  if (val === '.' && /[0-9]*\.[0-9]*$/.test(calcState.expr.split(/[+\-×÷]/).pop())) return;
+  calcState.expr += val;
+  calcState.result = calcState.expr || '0';
+  calcRender();
+}
+
+function calcEval() {
+  if (!calcState.expr) return;
+  try {
+    const safe = calcState.expr
+      .replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
+    // eslint-disable-next-line no-new-func
+    const r = Function('"use strict";return (' + safe + ')')();
+    if (!isFinite(r)) { calcState.result = 'Error'; calcState.expr = ''; }
+    else {
+      calcState.expr   = calcState.result;
+      calcState.result = +parseFloat(r.toFixed(10)) + '';
+    }
+    calcState.justEvaled = true;
+  } catch {
+    calcState.result = 'Error';
+    calcState.expr   = '';
+  }
+  calcRender();
+}
+
+function calcPercent() {
+  try {
+    const safe = calcState.expr.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
+    // eslint-disable-next-line no-new-func
+    const r = Function('"use strict";return (' + safe + ')')();
+    calcState.result = +parseFloat((r / 100).toFixed(10)) + '';
+    calcState.expr   = calcState.result;
+    calcState.justEvaled = true;
+  } catch { /* ignore */ }
+  calcRender();
+}
+
+// FAB toggle
+$('calc-fab').addEventListener('click', () => {
+  const panel = $('calc-panel');
+  const open  = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : '';
+  if (!open) {
+    // re-trigger animation
+    panel.style.animation = 'none';
+    requestAnimationFrame(() => { panel.style.animation = ''; });
+    calcRender();
+  }
+});
+
+$('calc-close').addEventListener('click', () => { $('calc-panel').style.display = 'none'; });
+
+// Calculator button delegation
+$('calc-panel').addEventListener('click', (e) => {
+  const btn = e.target.closest('.calc-btn');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const val    = btn.dataset.val;
+  if (action === 'clear')     { calcState.expr = ''; calcState.result = '0'; calcState.justEvaled = false; calcRender(); }
+  else if (action === 'backspace') {
+    calcState.expr   = calcState.expr.slice(0, -1);
+    calcState.result = calcState.expr || '0';
+    calcRender();
+  }
+  else if (action === 'equals') calcEval();
+  else if (action === 'pct')    calcPercent();
+  else if (val !== undefined)   calcInput(val);
+});
+
+// Keyboard support (when calc is open)
+document.addEventListener('keydown', (e) => {
+  if ($('calc-panel').style.display === 'none') return;
+  const map = { '0':'0','1':'1','2':'2','3':'3','4':'4','5':'5','6':'6','7':'7','8':'8','9':'9',
+    '+':'+','-':'−','*':'×','/':'÷','.':'.',
+    'Enter':'=','=':'=','Backspace':'back','Escape':'esc','%':'%' };
+  const k = map[e.key];
+  if (!k) return;
+  e.preventDefault();
+  if (k === '=')    calcEval();
+  else if (k === 'back') { calcState.expr = calcState.expr.slice(0,-1); calcState.result = calcState.expr||'0'; calcRender(); }
+  else if (k === 'esc') $('calc-panel').style.display = 'none';
+  else if (k === '%') calcPercent();
+  else calcInput(k);
+});
+
+/* ============================================================
+   RENDER CATEGORY SUMMARY (dashboard)
+   ============================================================ */
+
+function renderCatSummary() {
+  const map     = categoryMap();
+  const entries = Object.entries(map).filter(([, d]) => d.assigned > 0);
+  const el      = $('cat-summary-list');
+  const count   = $('cat-summary-count');
+
+  if (!entries.length) {
+    el.innerHTML = `<div class="empty-state" style="padding:1.5rem">
+      <p>Sin categorías con asignación</p>
+      <span>Distribuye montos en tus fuentes primero</span>
+    </div>`;
+    if (count) count.textContent = '';
+    return;
+  }
+
+  if (count) count.textContent = `${entries.length} categorías`;
+
+  el.innerHTML = `
+    <div class="cat-summary-header">
+      <span>Categoría</span>
+      <span>Progreso</span>
+      <span style="text-align:right">Asignado</span>
+      <span style="text-align:right">Gastado</span>
+      <span style="text-align:right">Disponible</span>
+    </div>` +
+    entries.map(([cat, d]) => {
+      const pct       = d.assigned > 0 ? Math.min(100, (d.spent / d.assigned) * 100) : 0;
+      const remaining = d.assigned - d.spent;
+      const over      = remaining < 0;
+      return `<div class="cat-summary-row">
+        <div class="cat-sum-name">
+          <span class="cat-dot" style="background:${d.color}"></span>
+          ${cat}
+        </div>
+        <div class="cat-sum-bar-wrap">
+          <div class="cat-sum-bar">
+            <div class="cat-sum-bar-fill" style="width:${pct}%;background:${over ? 'var(--danger)' : d.color}"></div>
+          </div>
+          <span class="cat-sum-pct">${Math.round(pct)}%</span>
+        </div>
+        <div class="cat-sum-col">
+          <div class="label">Asignado</div>
+          <div class="val">${money(d.assigned)}</div>
+        </div>
+        <div class="cat-sum-col">
+          <div class="label">Gastado</div>
+          <div class="val spent">-${money(d.spent)}</div>
+        </div>
+        <div class="cat-sum-col">
+          <div class="label">Disponible</div>
+          <div class="val ${over ? 'over' : 'remaining'}">${over ? '-' : ''}${money(Math.abs(remaining))}</div>
+        </div>
+      </div>`;
+    }).join('');
 }
 
 /* ============================================================
