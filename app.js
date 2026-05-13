@@ -1,6 +1,16 @@
 'use strict';
 
 /* ============================================================
+   SUPABASE CONFIG
+   Reemplazá estos dos valores con los de tu proyecto:
+   Supabase Dashboard → Settings → API
+   ============================================================ */
+
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';   // ej. https://xxxx.supabase.co
+const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const STATE_ROW_ID = 'default';
+
+/* ============================================================
    STATE
    ============================================================ */
 
@@ -21,6 +31,58 @@ const state = { ...INITIAL, ...JSON.parse(localStorage.getItem('budget_state') |
 if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
 
 /* ============================================================
+   SUPABASE CLIENT
+   ============================================================ */
+
+const _supabaseReady = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_KEY !== 'YOUR_SUPABASE_ANON_KEY';
+const db = _supabaseReady ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+/** Carga el estado desde Supabase. Retorna true si tuvo éxito. */
+async function loadFromSupabase() {
+  if (!db) return false;
+  try {
+    const { data, error } = await db
+      .from('budget_state')
+      .select('data')
+      .eq('id', STATE_ROW_ID)
+      .single();
+    if (error || !data?.data) return false;
+    // Mezclar: el estado remoto gana, pero preservamos editingSourceId local
+    const remote = data.data;
+    Object.assign(state, remote, { editingSourceId: null });
+    if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+    // Sincronizar también en localStorage como caché offline
+    localStorage.setItem('budget_state', JSON.stringify(state));
+    return true;
+  } catch (err) {
+    console.warn('BudgetFlow: no se pudo cargar desde Supabase, usando localStorage.', err);
+    return false;
+  }
+}
+
+/** Suscripción real-time: actualiza la UI cuando otro dispositivo guarda cambios. */
+function setupRealtime() {
+  if (!db) return;
+  db.channel('budget-sync')
+    .on('postgres_changes', {
+      event:  'UPDATE',
+      schema: 'public',
+      table:  'budget_state',
+      filter: `id=eq.${STATE_ROW_ID}`
+    }, (payload) => {
+      const remote = payload.new?.data;
+      if (!remote) return;
+      // Evitar pisarse a uno mismo: comparar timestamps
+      if (remote._savedAt && remote._savedAt === state._savedAt) return;
+      Object.assign(state, remote, { editingSourceId: state.editingSourceId });
+      localStorage.setItem('budget_state', JSON.stringify(state));
+      renderAll();
+      toast('🔄 Sincronizado con otro dispositivo');
+    })
+    .subscribe();
+}
+
+/* ============================================================
    UTILITIES
    ============================================================ */
 
@@ -29,8 +91,20 @@ const $$ = (sel, ctx = document) => ctx.querySelectorAll(sel);
 
 const money = (n) => `₡${Number(n || 0).toLocaleString('es-CR', { maximumFractionDigits: 2 })}`;
 const uid   = () => Math.random().toString(36).slice(2, 10);
-const save  = () => localStorage.setItem('budget_state', JSON.stringify(state));
 const fmt   = (iso) => { if (!iso) return '—'; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
+
+/** Guarda en localStorage (inmediato) y en Supabase (async, sin bloquear). */
+function save() {
+  state._savedAt = Date.now();
+  localStorage.setItem('budget_state', JSON.stringify(state));
+  if (!db) return;
+  db.from('budget_state')
+    .update({ data: state, updated_at: new Date().toISOString() })
+    .eq('id', STATE_ROW_ID)
+    .then(({ error }) => {
+      if (error) console.error('BudgetFlow: error al sincronizar con Supabase:', error);
+    });
+}
 
 let toastTimer;
 function toast(msg, duration = 2800) {
@@ -727,10 +801,20 @@ function renderCatSummary() {
 }
 
 /* ============================================================
-   INIT
+   INIT  (async: carga Supabase primero, localStorage como fallback)
    ============================================================ */
 
-$('source-date').valueAsDate = new Date();
-applyTheme();
-renderAll();
-switchTab('dashboard');
+(async () => {
+  const fromCloud = await loadFromSupabase();
+  if (!fromCloud && !_supabaseReady) {
+    console.info(
+      '%cBudgetFlow: Supabase no configurado.\nEdita SUPABASE_URL y SUPABASE_KEY en app.js para activar la sincronización entre dispositivos.',
+      'color:#f59e0b;font-weight:bold'
+    );
+  }
+  setupRealtime();
+  $('source-date').valueAsDate = new Date();
+  applyTheme();
+  renderAll();
+  switchTab('dashboard');
+})();
