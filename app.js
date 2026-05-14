@@ -120,6 +120,7 @@ function save() {
 
 const DEVICE_KEY = localStorage.getItem('budget_device_key') || uid();
 localStorage.setItem('budget_device_key', DEVICE_KEY);
+const ALLOWED_ROTATION_DAYS = [15, 30, 60, 90, 180];
 
 async function sha256(text) {
   const data = new TextEncoder().encode(text);
@@ -129,7 +130,7 @@ async function sha256(text) {
 
 function isPasswordExpired() {
   if (!state.security?.passwordHash || !state.security?.changedAt) return false;
-  const days = Number(state.security.rotationDays || 45);
+  const days = ALLOWED_ROTATION_DAYS.includes(Number(state.security.rotationDays)) ? Number(state.security.rotationDays) : 30;
   const ms = Date.now() - new Date(state.security.changedAt).getTime();
   return ms > days * 24 * 60 * 60 * 1000;
 }
@@ -164,6 +165,8 @@ async function requireAuthGate() {
     <form id="auth-form">
       <input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="6" />
       <input id="auth-pass2" type="password" placeholder="Confirmar contraseña" required minlength="6" />
+      <label>Caducidad de contraseña</label>
+      <select id="auth-rotation" required>${ALLOWED_ROTATION_DAYS.map((d)=>`<option value="${d}" ${d===30?'selected':''}>${d} días</option>`).join('')}</select>
       <label><input type="checkbox" id="auth-remember" checked /> Recordarme en este dispositivo</label>
       <button class="btn-primary" type="submit">Guardar y entrar</button>
     </form>` : `
@@ -184,6 +187,7 @@ async function requireAuthGate() {
         const p2 = $('auth-pass2').value;
         if (p1 !== p2) return toast('Las contraseñas no coinciden');
         state.security.passwordHash = await sha256(p1);
+        state.security.rotationDays = Number($('auth-rotation').value || 30);
       } else {
         const oldOk = (await sha256($('auth-old').value)) === state.security.passwordHash;
         if (!oldOk) return toast('Contraseña incorrecta');
@@ -210,7 +214,7 @@ function openSecuritySettings() {
     <div class="field"><label>Contraseña actual</label><input id="sec-old" type="password" required /></div>
     <div class="field"><label>Nueva contraseña</label><input id="sec-new" type="password" minlength="6" required /></div>
     <div class="field"><label>Confirmar nueva</label><input id="sec-new2" type="password" minlength="6" required /></div>
-    <div class="field"><label>Rotación (días)</label><input id="sec-days" type="number" min="7" value="${state.security.rotationDays || 45}" required /></div>
+    <div class="field"><label>Rotación (días)</label><select id="sec-days" required>${ALLOWED_ROTATION_DAYS.map((d)=>`<option value="${d}" ${Number(state.security.rotationDays||30)===d?"selected":""}>${d} días</option>`).join("")}</select></div>
     <div class="field form-actions"><button class="btn-primary" type="submit">Guardar</button></div>
   </form>`;
   $('modal-content').innerHTML = content;
@@ -220,7 +224,7 @@ function openSecuritySettings() {
     if ((await sha256($('sec-old').value)) !== state.security.passwordHash) return toast('Clave actual inválida');
     if ($('sec-new').value !== $('sec-new2').value) return toast('No coinciden');
     state.security.passwordHash = await sha256($('sec-new').value);
-    state.security.rotationDays = Number($('sec-days').value || 45);
+    state.security.rotationDays = Number($('sec-days').value || 30);
     state.security.changedAt = new Date().toISOString();
     state.security.trustedDevices = { [DEVICE_KEY]: new Date().toISOString() };
     save();
