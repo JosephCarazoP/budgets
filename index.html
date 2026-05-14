@@ -2,7 +2,7 @@
 <html lang="es" data-theme="light">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>BudgetFlow — Gestor de presupuestos</title>
   <!-- Web App Manifest (necesario para Home Screen en iOS) -->
   <link rel="manifest" href="/manifest.json" />
@@ -124,11 +124,14 @@
       <!-- ===== SOURCES TAB ===== -->
       <section class="tab-panel" id="tab-sources">
         <div class="page-header">
-          <h1>Fuentes de ingreso</h1>
-          <p class="muted">Administra tus fuentes y su distribución</p>
+          <div>
+            <h1>Fuentes de ingreso</h1>
+            <p class="muted">Administra tus fuentes y su distribución</p>
+          </div>
+          <button type="button" class="icon-btn quick-add-btn" id="toggle-source-form" title="Agregar fuente">+</button>
         </div>
 
-        <div class="card">
+        <div class="card collapsible-card" id="source-form-card" style="display:none">
           <div class="card-header">
             <h3 id="source-form-title">Nueva fuente</h3>
           </div>
@@ -165,11 +168,14 @@
       <!-- ===== CATEGORIES TAB ===== -->
       <section class="tab-panel" id="tab-categories">
         <div class="page-header">
-          <h1>Categorías</h1>
-          <p class="muted">Vista consolidada de todas las categorías</p>
+          <div>
+            <h1>Categorías</h1>
+            <p class="muted">Vista consolidada de todas las categorías</p>
+          </div>
+          <button type="button" class="icon-btn quick-add-btn" id="toggle-category-form" title="Agregar categoría">+</button>
         </div>
 
-        <div class="card">
+        <div class="card collapsible-card" id="category-form-card" style="display:none">
           <div class="card-header">
             <h3>Nueva categoría</h3>
           </div>
@@ -195,11 +201,14 @@
       <!-- ===== EXPENSES TAB ===== -->
       <section class="tab-panel" id="tab-expenses">
         <div class="page-header">
-          <h1>Gastos</h1>
-          <p class="muted">Registra y revisa tus gastos</p>
+          <div>
+            <h1>Gastos</h1>
+            <p class="muted">Registra y revisa tus gastos</p>
+          </div>
+          <button type="button" class="icon-btn quick-add-btn" id="toggle-expense-form" title="Registrar gasto">+</button>
         </div>
 
-        <div class="card">
+        <div class="card collapsible-card" id="expense-form-card" style="display:none">
           <div class="card-header">
             <h3>Registrar gasto</h3>
           </div>
@@ -322,17 +331,41 @@
     </div>
   </div>
 
-  <!-- Service Worker: fuerza actualización en iOS Home Screen -->
+  <!-- Service Worker: actualización controlada de la PWA -->
   <script>
     if ('serviceWorker' in navigator) {
+      let hasRefreshed = false;
+
       navigator.serviceWorker.register('/sw.js').then((reg) => {
-        // Verificar si hay versión nueva disponible
+        const showUpdatePrompt = (waitingWorker) => {
+          const shouldUpdate = window.confirm('Nueva versión disponible. ¿Actualizar ahora?');
+          if (shouldUpdate && waitingWorker) {
+            waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+          }
+        };
+
+        if (reg.waiting) {
+          showUpdatePrompt(reg.waiting);
+        }
+
         reg.addEventListener('updatefound', () => {
-          const newSW = reg.installing;
-          newSW.addEventListener('statechange', () => {
-            if (newSW.state === 'activated') window.location.reload();
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdatePrompt(newWorker);
+            }
           });
         });
+
+        setInterval(() => reg.update(), 60 * 1000);
+      });
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (hasRefreshed) return;
+        hasRefreshed = true;
+        window.location.reload();
       });
     }
   </script>
