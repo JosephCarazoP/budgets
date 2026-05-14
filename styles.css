@@ -719,7 +719,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 .expense-table-header {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
   padding: .5rem 1.25rem;
   font-size: .72rem;
   font-weight: 600;
@@ -731,7 +731,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 .expense-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
   padding: .75rem 1.25rem;
   border-bottom: 1px solid var(--border);
   align-items: center;
@@ -752,6 +752,38 @@ details[open] > summary::before { transform: rotate(90deg); }
   background: var(--bg-alt); color: var(--text-2);
 }
 .exp-date { font-size: .78rem; color: var(--text-3); }
+
+.expense-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .45rem;
+}
+
+.expense-action-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text-2);
+  font-size: .74rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: .26rem .62rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.expense-action-btn:hover {
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-alt));
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  color: var(--text);
+}
+
+.expense-action-btn.danger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-alt));
+  border-color: color-mix(in srgb, var(--danger) 26%, var(--border));
+  color: var(--danger);
+}
 
 /* ============================================================
    CHIPS
@@ -1356,6 +1388,11 @@ details[open] > summary::before { transform: rotate(90deg); }
     grid-template-rows: auto auto;
     gap: .25rem;
   }
+  .expense-actions {
+    justify-content: flex-start;
+    margin-top: .15rem;
+    grid-column: 1 / -1;
+  }
   .exp-date, .exp-tag { font-size: .7rem; }
 
   .bottom-nav {
@@ -1635,11 +1672,50 @@ details[open] > summary::before { transform: rotate(90deg); }
   gap: .75rem;
 }
 
+.auth-security-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  padding: .85rem;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 11%, var(--card)) 0%, var(--card) 100%);
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+}
+
+.auth-security-hero-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--primary) 20%, var(--bg-alt));
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.auth-security-hero-title {
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: .18rem;
+}
+
+.auth-security-hero-subtitle {
+  font-size: .75rem;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
 .auth-settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  padding: .8rem .85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--card) 85%, var(--bg-alt));
 }
 
 .auth-settings-title {
@@ -1656,6 +1732,20 @@ details[open] > summary::before { transform: rotate(90deg); }
   font-size: .78rem;
   color: var(--text-2);
   line-height: 1.5;
+}
+
+#security-modal-content {
+  max-width: 560px;
+}
+
+#security-modal-content .modal-header {
+  padding: 1rem 1rem .6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+#security-modal-body {
+  padding: 1rem;
+  background: color-mix(in srgb, var(--card) 90%, var(--bg-alt));
 }
 
 .auth-settings-btn {
