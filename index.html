@@ -322,17 +322,41 @@
     </div>
   </div>
 
-  <!-- Service Worker: fuerza actualización en iOS Home Screen -->
+  <!-- Service Worker: actualización controlada de la PWA -->
   <script>
     if ('serviceWorker' in navigator) {
+      let hasRefreshed = false;
+
       navigator.serviceWorker.register('/sw.js').then((reg) => {
-        // Verificar si hay versión nueva disponible
+        const showUpdatePrompt = (waitingWorker) => {
+          const shouldUpdate = window.confirm('Nueva versión disponible. ¿Actualizar ahora?');
+          if (shouldUpdate && waitingWorker) {
+            waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+          }
+        };
+
+        if (reg.waiting) {
+          showUpdatePrompt(reg.waiting);
+        }
+
         reg.addEventListener('updatefound', () => {
-          const newSW = reg.installing;
-          newSW.addEventListener('statechange', () => {
-            if (newSW.state === 'activated') window.location.reload();
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdatePrompt(newWorker);
+            }
           });
         });
+
+        setInterval(() => reg.update(), 60 * 1000);
+      });
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (hasRefreshed) return;
+        hasRefreshed = true;
+        window.location.reload();
       });
     }
   </script>
