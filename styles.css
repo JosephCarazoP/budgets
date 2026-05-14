@@ -236,6 +236,17 @@ a { color: inherit; text-decoration: none; }
   transition: background .2s, border .2s;
 }
 
+.collapsible-card {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity .22s ease, transform .22s ease;
+}
+
+.collapsible-card.is-open {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .card-header {
   display: flex;
   align-items: center;

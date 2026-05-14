@@ -397,6 +397,7 @@ window.startEditSource = function(id) {
   $('source-form-title').textContent  = 'Editar fuente';
   $('cancel-edit-btn').style.display  = '';
   $('source-form-card').style.display = '';
+  $('source-form-card').classList.add('is-open');
   $('toggle-source-form').textContent = '−';
   switchTab('sources');
   $('source-name').focus();
@@ -442,6 +443,7 @@ $('source-form').addEventListener('submit', (e) => {
     $('source-date').valueAsDate = new Date();
   }
   renderAll();
+  $('source-form-card').classList.remove('is-open');
   $('source-form-card').style.display = 'none';
   $('toggle-source-form').textContent = '+';
 });
@@ -539,6 +541,7 @@ $('category-form').addEventListener('submit', (e) => {
   e.target.reset();
   $('category-color').value = '#3b82f6';
   renderAll();
+  $('category-form-card').classList.remove('is-open');
   $('category-form-card').style.display = 'none';
   $('toggle-category-form').textContent = '+';
   toast(`Categoría "${name}" creada`);
@@ -612,6 +615,7 @@ $('expense-form').addEventListener('submit', (e) => {
   e.target.reset();
   const ebi = $('expense-budget-info'); if (ebi) ebi.style.display = 'none';
   renderAll();
+  $('expense-form-card').classList.remove('is-open');
   $('expense-form-card').style.display = 'none';
   $('toggle-expense-form').textContent = '+';
   toast(`Gasto de ${money(amount)} registrado`);
@@ -787,8 +791,18 @@ function toggleCollapsibleCard(cardId, btnId) {
   const btn = $(btnId);
   if (!card || !btn) return;
   const isHidden = card.style.display === 'none';
-  card.style.display = isHidden ? '' : 'none';
-  btn.textContent = isHidden ? '−' : '+';
+
+  if (isHidden) {
+    card.style.display = '';
+    requestAnimationFrame(() => card.classList.add('is-open'));
+    btn.textContent = '−';
+    if (cardId === 'expense-form-card') updateExpenseBudgetInfo();
+    return;
+  }
+
+  card.classList.remove('is-open');
+  setTimeout(() => { card.style.display = 'none'; }, 220);
+  btn.textContent = '+';
 }
 
 $('toggle-source-form').addEventListener('click', () => toggleCollapsibleCard('source-form-card', 'toggle-source-form'));
