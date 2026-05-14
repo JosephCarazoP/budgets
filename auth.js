@@ -250,7 +250,6 @@ const Auth = {
           ${durationSelect}
           <div class="auth-error" id="auth-error"></div>
           <button class="auth-btn" id="auth-submit">Crear contraseña</button>
-          <button class="auth-skip" id="auth-skip">Continuar sin contraseña</button>
         </div>`;
     }
 
@@ -363,11 +362,6 @@ const Auth = {
     }
 
     if (mode === 'setup') {
-      document.getElementById('auth-skip')?.addEventListener('click', () => {
-        document.getElementById('auth-overlay')?.remove();
-        if (Auth._onUnlocked) Auth._onUnlocked();
-      });
-
       submit.addEventListener('click', async () => {
         const pw  = document.getElementById('auth-pw')?.value  || '';
         const pw2 = document.getElementById('auth-pw2')?.value || '';
