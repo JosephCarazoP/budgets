@@ -467,6 +467,18 @@ const Auth = {
 
     return `
       <div class="auth-settings-panel" id="auth-settings-panel">
+        <div class="auth-security-hero">
+          <div class="auth-security-hero-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <div>
+            <div class="auth-security-hero-title">Protección de acceso</div>
+            <div class="auth-security-hero-subtitle">Agrega una contraseña para bloquear tu presupuesto cuando cierres sesión o venza la vigencia.</div>
+          </div>
+        </div>
+
         <div class="auth-settings-row">
           <div>
             <div class="auth-settings-title">

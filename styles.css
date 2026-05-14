@@ -1635,11 +1635,50 @@ details[open] > summary::before { transform: rotate(90deg); }
   gap: .75rem;
 }
 
+.auth-security-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  padding: .85rem;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 11%, var(--card)) 0%, var(--card) 100%);
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+}
+
+.auth-security-hero-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--primary) 20%, var(--bg-alt));
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.auth-security-hero-title {
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: .18rem;
+}
+
+.auth-security-hero-subtitle {
+  font-size: .75rem;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
 .auth-settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  padding: .8rem .85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--card) 85%, var(--bg-alt));
 }
 
 .auth-settings-title {
@@ -1656,6 +1695,20 @@ details[open] > summary::before { transform: rotate(90deg); }
   font-size: .78rem;
   color: var(--text-2);
   line-height: 1.5;
+}
+
+#security-modal-content {
+  max-width: 560px;
+}
+
+#security-modal-content .modal-header {
+  padding: 1rem 1rem .6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+#security-modal-body {
+  padding: 1rem;
+  background: color-mix(in srgb, var(--card) 90%, var(--bg-alt));
 }
 
 .auth-settings-btn {
