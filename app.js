@@ -29,6 +29,10 @@ const INITIAL = {
 
 const state = { ...INITIAL, ...JSON.parse(localStorage.getItem('budget_state') || '{}') };
 if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+if (!state.security) {
+  state.security = { passwordHash: '', trustedDevices: {}, rotationDays: 45, changedAt: null };
+}
+
 
 /* ============================================================
    SUPABASE CLIENT
@@ -51,6 +55,10 @@ async function loadFromSupabase() {
     const remote = data.data;
     Object.assign(state, remote, { editingSourceId: null });
     if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+if (!state.security) {
+  state.security = { passwordHash: '', trustedDevices: {}, rotationDays: 45, changedAt: null };
+}
+
     // Sincronizar también en localStorage como caché offline
     localStorage.setItem('budget_state', JSON.stringify(state));
     return true;
@@ -107,6 +115,129 @@ function save() {
     .then(({ error }) => {
       if (error) console.error('BudgetFlow: error al sincronizar con Supabase:', error);
     });
+}
+
+
+const DEVICE_KEY = localStorage.getItem('budget_device_key') || uid();
+localStorage.setItem('budget_device_key', DEVICE_KEY);
+const ALLOWED_ROTATION_DAYS = [15, 30, 60, 90, 180];
+
+async function sha256(text) {
+  const data = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function isPasswordExpired() {
+  if (!state.security?.passwordHash || !state.security?.changedAt) return false;
+  const days = ALLOWED_ROTATION_DAYS.includes(Number(state.security.rotationDays)) ? Number(state.security.rotationDays) : 30;
+  const ms = Date.now() - new Date(state.security.changedAt).getTime();
+  return ms > days * 24 * 60 * 60 * 1000;
+}
+
+function trustDevice() {
+  if (!state.security.trustedDevices) state.security.trustedDevices = {};
+  state.security.trustedDevices[DEVICE_KEY] = new Date().toISOString();
+}
+
+function isTrustedDevice() {
+  return Boolean(state.security?.trustedDevices?.[DEVICE_KEY]);
+}
+
+
+function untrustDevice() {
+  if (!state.security?.trustedDevices) return;
+  delete state.security.trustedDevices[DEVICE_KEY];
+}
+
+async function requireAuthGate() {
+  const overlay = $('auth-overlay');
+  const card = $('auth-card');
+  const app = $('app-shell');
+  const forceLogin = state.security?.passwordHash && (!isTrustedDevice() || isPasswordExpired());
+  if (!state.security?.passwordHash || forceLogin) {
+    app.style.display = 'none';
+    overlay.style.display = '';
+  } else {
+    overlay.style.display = 'none';
+    app.style.display = '';
+    return true;
+  }
+
+  const firstTime = !state.security?.passwordHash;
+  card.innerHTML = firstTime ? `
+    <h2>Protección de acceso</h2>
+    <p>Configura una contraseña para bloquear el acceso a tus finanzas.</p>
+    <form id="auth-form" class="auth-form">
+      <input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="6" />
+      <input id="auth-pass2" type="password" placeholder="Confirmar contraseña" required minlength="6" />
+      <label class="auth-label" for="auth-rotation">Cambio obligatorio cada</label>
+      <select id="auth-rotation" required>${ALLOWED_ROTATION_DAYS.map((d)=>`<option value="${d}" ${d===30?'selected':''}>${d} días</option>`).join('')}</select>
+      <label class="auth-remember"><input type="checkbox" id="auth-remember" checked /> <span>Recordarme en este dispositivo</span></label>
+      <button class="btn-primary" type="submit">Guardar y entrar</button>
+    </form>` : `
+    <h2>${isPasswordExpired() ? 'Cambio de contraseña requerido' : 'Verificar acceso'}</h2>
+    <p>${isPasswordExpired() ? 'Debes cambiar tu contraseña para continuar.' : 'Este dispositivo no está autorizado.'}</p>
+    <form id="auth-form" class="auth-form">
+      <input id="auth-old" type="password" placeholder="Contraseña actual" required />
+      ${isPasswordExpired() ? '<input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="6" /><input id="auth-pass2" type="password" placeholder="Confirmar nueva contraseña" required minlength="6" />' : ''}
+      <label class="auth-remember"><input type="checkbox" id="auth-remember" checked /> <span>Recordarme en este dispositivo</span></label>
+      <button class="btn-primary" type="submit">Entrar</button>
+    </form>`;
+
+  return new Promise((resolve) => {
+    $('auth-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (firstTime) {
+        const p1 = $('auth-pass').value;
+        const p2 = $('auth-pass2').value;
+        if (p1 !== p2) return toast('Las contraseñas no coinciden');
+        state.security.passwordHash = await sha256(p1);
+        state.security.rotationDays = Number($('auth-rotation').value || 30);
+      } else {
+        const oldOk = (await sha256($('auth-old').value)) === state.security.passwordHash;
+        if (!oldOk) return toast('Contraseña incorrecta');
+        if (isPasswordExpired()) {
+          const p1 = $('auth-pass').value;
+          const p2 = $('auth-pass2').value;
+          if (p1 !== p2) return toast('Las contraseñas no coinciden');
+          state.security.passwordHash = await sha256(p1);
+        }
+      }
+      state.security.changedAt = new Date().toISOString();
+      if ($('auth-remember')?.checked) trustDevice();
+      else untrustDevice();
+      save();
+      overlay.style.display = 'none';
+      app.style.display = '';
+      resolve(true);
+    });
+  });
+}
+
+function openSecuritySettings() {
+  const content = `<h3>Cambiar contraseña</h3>
+  <form id="security-form" class="form-grid" style="padding:1rem">
+    <div class="field"><label>Contraseña actual</label><input id="sec-old" type="password" required /></div>
+    <div class="field"><label>Nueva contraseña</label><input id="sec-new" type="password" minlength="6" required /></div>
+    <div class="field"><label>Confirmar nueva</label><input id="sec-new2" type="password" minlength="6" required /></div>
+    <div class="field"><label>Rotación (días)</label><select id="sec-days" required>${ALLOWED_ROTATION_DAYS.map((d)=>`<option value="${d}" ${Number(state.security.rotationDays||30)===d?"selected":""}>${d} días</option>`).join("")}</select></div>
+    <div class="field form-actions"><button class="btn-primary" type="submit">Guardar</button></div>
+  </form>`;
+  $('modal-content').innerHTML = content;
+  $('modal-overlay').style.display = '';
+  $('security-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if ((await sha256($('sec-old').value)) !== state.security.passwordHash) return toast('Clave actual inválida');
+    if ($('sec-new').value !== $('sec-new2').value) return toast('No coinciden');
+    state.security.passwordHash = await sha256($('sec-new').value);
+    state.security.rotationDays = Number($('sec-days').value || 30);
+    state.security.changedAt = new Date().toISOString();
+    state.security.trustedDevices = { [DEVICE_KEY]: new Date().toISOString() };
+    save();
+    $('modal-overlay').style.display = 'none';
+    toast('Seguridad actualizada');
+  });
 }
 
 let toastTimer;
@@ -1060,6 +1191,8 @@ function renderCatSummary() {
     );
   }
   setupRealtime();
+  $('security-settings').addEventListener('click', openSecuritySettings);
+  await requireAuthGate();
   $('source-date').valueAsDate = new Date();
   applyTheme();
   renderAll();
