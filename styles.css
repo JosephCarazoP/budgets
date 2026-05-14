@@ -707,6 +707,11 @@ details[open] > summary::before { transform: rotate(90deg); }
 .breakdown-row .src-vals { display: flex; gap: .75rem; }
 .breakdown-row .src-vals span { color: var(--text-3); }
 .breakdown-row .src-vals b { color: var(--text); }
+.btn-reassign {
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 /* ============================================================
    EXPENSE LIST

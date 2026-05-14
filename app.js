@@ -140,7 +140,7 @@ function categoryMap() {
     Object.entries(s.distribution || {}).forEach(([cat, amount]) => {
       if (!map[cat]) map[cat] = { assigned: 0, spent: 0, color: '#64748b', bySource: {} };
       map[cat].assigned += Number(amount || 0);
-      map[cat].bySource[s.id] = { sourceName: s.name, assigned: Number(amount || 0), spent: 0 };
+      map[cat].bySource[s.id] = { sourceId: s.id, sourceName: s.name, assigned: Number(amount || 0), spent: 0 };
     });
   });
   state.expenses.forEach((e) => {
@@ -148,12 +148,94 @@ function categoryMap() {
     map[e.category].spent += Number(e.amount);
     if (!map[e.category].bySource[e.sourceId]) {
       const src = state.sources.find((s) => s.id === e.sourceId);
-      map[e.category].bySource[e.sourceId] = { sourceName: src?.name || 'Fuente eliminada', assigned: 0, spent: 0 };
+      map[e.category].bySource[e.sourceId] = { sourceId: e.sourceId, sourceName: src?.name || 'Fuente eliminada', assigned: 0, spent: 0 };
     }
     map[e.category].bySource[e.sourceId].spent += Number(e.amount);
   });
   return map;
 }
+
+function moveRemainingBudget(sourceId, fromCategory) {
+  const source = state.sources.find((s) => s.id === sourceId);
+  if (!source) return;
+
+  const assigned = Number(source.distribution?.[fromCategory] || 0);
+  const spent = state.expenses
+    .filter((e) => e.sourceId === sourceId && e.category === fromCategory)
+    .reduce((a, b) => a + Number(b.amount), 0);
+  const remaining = assigned - spent;
+
+  if (remaining <= 0) {
+    toast('No hay saldo restante para reasignar');
+    return;
+  }
+
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  const targetOptions = state.categories
+    .filter((c) => c.name !== fromCategory)
+    .map((c) => `<option value="${c.name}">${c.name}</option>`)
+    .join('');
+
+  content.innerHTML = `
+    <div class="card-header">
+      <h3>Reasignar sobrante</h3>
+    </div>
+    <form id="reassign-form" class="form-grid" style="padding:1rem">
+      <p class="muted">Fuente: <b>${source.name}</b> · Categoría: <b>${fromCategory}</b> · Disponible: <b>${money(remaining)}</b></p>
+      <div class="field">
+        <label>Monto a mover (₡)</label>
+        <input id="reassign-amount" type="number" min="0.01" step="0.01" value="${remaining}" required />
+      </div>
+      <div class="field">
+        <label>Destino</label>
+        <select id="reassign-target">
+          <option value="__unassigned__">Volver a la fuente (Sin asignar)</option>
+          ${targetOptions}
+        </select>
+      </div>
+      <div class="field form-actions">
+        <button type="submit" class="btn-primary">Mover</button>
+        <button type="button" class="btn-ghost" id="reassign-cancel">Cancelar</button>
+      </div>
+    </form>
+  `;
+  overlay.style.display = 'flex';
+  _buildCsel('reassign-target', { isCategory: true });
+
+  $('reassign-cancel')?.addEventListener('click', () => { overlay.style.display = 'none'; });
+  overlay.onclick = (ev) => {
+    if (ev.target === overlay) overlay.style.display = 'none';
+  };
+
+  $('reassign-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const amount = Number($('reassign-amount').value);
+    const target = $('reassign-target').value;
+    if (!Number.isFinite(amount) || amount <= 0 || amount > remaining) {
+      toast(`⚠️ Monto inválido. Máximo disponible: ${money(remaining)}`);
+      return;
+    }
+
+    const dist = { ...(source.distribution || {}) };
+    dist[fromCategory] = Math.max(0, Number(dist[fromCategory] || 0) - amount);
+    if (dist[fromCategory] === 0) delete dist[fromCategory];
+
+    if (target !== '__unassigned__') {
+      dist[target] = Number(dist[target] || 0) + amount;
+      toast(`Reasignado ${money(amount)} de ${fromCategory} a ${target}`);
+    } else {
+      toast(`Movido ${money(amount)} de ${fromCategory} a "Sin asignar"`);
+    }
+
+    source.distribution = dist;
+    overlay.style.display = 'none';
+    renderAll();
+  });
+}
+window.moveRemainingBudget = moveRemainingBudget;
 
 /* ============================================================
    NAVIGATION / TABS
@@ -503,6 +585,9 @@ function renderCategories() {
           <span>Asig: <b>${money(x.assigned)}</b></span>
           <span>Gast: <b>${money(x.spent)}</b></span>
           <span>Disp: <b>${money(x.assigned - x.spent)}</b></span>
+          ${(x.assigned - x.spent) > 0
+    ? `<button type="button" class="btn-link btn-reassign" onclick="moveRemainingBudget('${x.sourceId}','${cat.replace(/'/g, "\\'")}')">Reasignar sobrante</button>`
+    : ''}
         </div>
       </div>`).join('');
 
