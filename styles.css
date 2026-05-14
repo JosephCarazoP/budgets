@@ -1129,28 +1129,42 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 .calc-fab {
   position: fixed;
-  bottom: 1.75rem;
-  right: 1.75rem;
-  width: 50px;
-  height: 50px;
-  border-radius: 14px;
-  background: var(--accent);
-  color: var(--accent-fg);
-  border: none;
+  bottom: 50%;
+  transform: translateY(50%);
+  right: 1.25rem;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text-2);
+  border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 16px rgba(0,0,0,.22);
+  box-shadow: var(--shadow-md);
   z-index: 500;
-  transition: transform .18s, box-shadow .18s, background .15s;
+  transition: transform .18s cubic-bezier(.34,1.56,.64,1),
+              box-shadow .18s,
+              background .15s,
+              color .15s;
 }
 
 .calc-fab:hover {
-  transform: translateY(-2px) scale(1.05);
-  box-shadow: 0 6px 20px rgba(0,0,0,.28);
+  background: var(--bg-alt);
+  color: var(--text);
+  box-shadow: 0 6px 20px rgba(0,0,0,.18);
+  transform: translateY(50%) scale(1.08);
 }
 
-.calc-fab:active { transform: scale(.96); }
+.calc-fab:active {
+  transform: translateY(50%) scale(.94);
+}
+
+.calc-fab.is-open {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+}
 
 /* ============================================================
    CALCULATOR PANEL
@@ -1158,8 +1172,9 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 .calc-panel {
   position: fixed;
-  bottom: 6rem;
-  right: 1.75rem;
+  bottom: 50%;
+  right: calc(1.25rem + 42px + .75rem);
+  transform: translateY(50%);
   width: 300px;
   background: var(--card);
   border: 1px solid var(--border);
@@ -1172,8 +1187,8 @@ details[open] > summary::before { transform: rotate(90deg); }
 }
 
 @keyframes calcPop {
-  from { opacity: 0; transform: scale(.9) translateY(12px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
+  from { opacity: 0; transform: translateY(50%) scale(.92) translateX(8px); }
+  to   { opacity: 1; transform: translateY(50%) scale(1) translateX(0); }
 }
 
 .calc-drag-handle {
@@ -1253,7 +1268,6 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 .calc-btn:hover   { opacity: .8; }
 .calc-btn:active  { transform: scale(.93); }
-
 .calc-btn.span2   { grid-column: span 2; }
 
 .calc-btn.calc-op {
@@ -1279,26 +1293,39 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 @media (max-width: 768px) {
   .calc-fab {
-    bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
-    right: 1rem;
-    width: 46px;
-    height: 46px;
-    border-radius: 12px;
+    /* Esquina inferior izquierda — zona natural del pulgar, encima del nav */
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px) + .75rem);
+    left: 1rem;
+    right: auto;
+    transform: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
   }
+
+  .calc-fab:hover  { transform: scale(1.06); }
+  .calc-fab:active { transform: scale(.94); }
 
   .calc-panel {
     bottom: 0;
     right: 0;
     left: 0;
     width: 100%;
+    transform: none;
     border-radius: 20px 20px 0 0;
     padding-bottom: env(safe-area-inset-bottom, .5rem);
+    animation: calcSheetUp .22s cubic-bezier(.34,1.2,.64,1);
+  }
+
+  @keyframes calcSheetUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
   .calc-grid { gap: .35rem; padding: 0 .6rem .6rem; }
-  .calc-btn { height: 62px; }
+  .calc-btn  { height: 62px; }
 
-  /* Category summary: switch from fixed-width grid to responsive flex cards */
+  /* Category summary */
   .cat-summary-header { display: none; }
   .cat-summary-row {
     display: flex;
@@ -1306,12 +1333,12 @@ details[open] > summary::before { transform: rotate(90deg); }
     column-gap: .5rem;
     row-gap: .35rem;
     padding: .8rem 1.25rem;
-    grid-template-columns: none; /* override desktop grid */
+    grid-template-columns: none;
   }
   .cat-sum-name        { width: 100%; }
   .cat-sum-bar-wrap    { width: 100%; margin-bottom: .1rem; }
   .cat-sum-col         { flex: 1; min-width: 70px; text-align: left; display: flex; flex-direction: column; }
-  .cat-sum-col:nth-child(4) { display: flex; } /* un-hide the hidden column */
+  .cat-sum-col:nth-child(4) { display: flex; }
 }
 
 /* ============================================================
