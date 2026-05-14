@@ -6,8 +6,8 @@
    Supabase Dashboard → Settings → API
    ============================================================ */
 
-const SUPABASE_URL = 'YOUR_SUPABASE_URL';   // ej. https://xxxx.supabase.co
-const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const SUPABASE_URL = 'https://jljdudxbggewxvqmxlvj.supabase.co/rest/v1/';   // ej. https://xxxx.supabase.co
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsamR1ZHhiZ2dld3h2cW14bHZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MDMwNjYsImV4cCI6MjA5NDI3OTA2Nn0.eJAmo8cxkOr5em89domd0NWimI17TUAfaUH0Xo4Pncc';
 const STATE_ROW_ID = 'default';
 
 /* ============================================================
