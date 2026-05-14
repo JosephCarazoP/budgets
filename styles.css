@@ -1623,20 +1623,6 @@ details[open] > summary::before { transform: rotate(90deg); }
 .auth-btn:active  { transform: scale(.98); }
 .auth-btn:disabled { opacity: .5; cursor: not-allowed; }
 
-.auth-skip {
-  background: transparent;
-  border: none;
-  color: var(--text-3);
-  font-family: inherit;
-  font-size: .78rem;
-  cursor: pointer;
-  text-align: center;
-  padding: .25rem;
-  transition: color .15s;
-  margin-top: -.25rem;
-}
-.auth-skip:hover { color: var(--text-2); }
-
 /* ---- Settings panel ---- */
 .auth-settings-panel {
   display: flex;
