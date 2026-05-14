@@ -59,6 +59,10 @@ body {
   line-height: 1.5;
   transition: background .2s, color .2s;
 }
+/* Evita zoom por doble tap en controles táctiles */
+button, a, input, select, label, summary, [role="button"] {
+  touch-action: manipulation;
+}
 button { cursor: pointer; font-family: inherit; }
 input, select, button { font-size: .875rem; }
 a { color: inherit; text-decoration: none; }
@@ -177,6 +181,10 @@ a { color: inherit; text-decoration: none; }
 
 .page-header {
   margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
 }
 
 .page-header h1 {
@@ -190,6 +198,16 @@ a { color: inherit; text-decoration: none; }
   font-size: .875rem;
   color: var(--text-2);
   margin-top: .25rem;
+}
+
+.quick-add-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 1.2rem;
+  font-weight: 600;
+  background: var(--card);
 }
 
 /* ============================================================
@@ -216,6 +234,17 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 1rem;
   overflow: visible;
   transition: background .2s, border .2s;
+}
+
+.collapsible-card {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity .22s ease, transform .22s ease;
+}
+
+.collapsible-card.is-open {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .card-header {
@@ -1249,7 +1278,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 @media (max-width: 768px) {
   .calc-fab {
-    bottom: 5.5rem;
+    bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
     right: 1rem;
     width: 46px;
     height: 46px;
@@ -1301,7 +1330,9 @@ details[open] > summary::before { transform: rotate(90deg); }
     background: var(--card);
     border-bottom: 1px solid var(--border);
     position: sticky;
-    top: 0;
+    top: .5rem;
+    margin: 0 .5rem .5rem;
+    border-radius: 12px;
     z-index: 100;
   }
 

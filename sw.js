@@ -1,55 +1,62 @@
-// Service Worker — BudgetFlow
-// Cambiá el número de versión cada vez que hagás deploy
-// para forzar que iOS descarte el caché viejo.
-const VERSION = 'v1';
-const CACHE = `budgetflow-${VERSION}`;
+const VERSION = 'v2';
+const CACHE = `budgetflow-static-${VERSION}`;
+const APP_SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.json'];
 
-// Archivos a cachear
-const ASSETS = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.json'];
-
-// Instalación: cachear archivos frescos
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
-  );
-  self.skipWaiting(); // activar inmediatamente sin esperar
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));
 });
 
-// Activación: eliminar cachés viejos
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))
-      )
-    )
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)));
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim(); // tomar control de todas las pestañas
 });
 
-// Fetch: network-first para app.js (siempre fresco), cache-first para el resto
-self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 
-  // Supabase y externos: nunca interceptar
-  if (!url.origin.includes(self.location.origin)) return;
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
 
-  // app.js y styles.css: siempre intentar red primero
-  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
-    e.respondWith(
-      fetch(e.request)
-        .then((res) => {
-          const clone = res.clone();
-          caches.open(CACHE).then((c) => c.put(e.request, clone));
-          return res;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put('/index.html', copy));
+          return response;
         })
-        .catch(() => caches.match(e.request))
+        .catch(async () => {
+          const cached = await caches.match('/index.html');
+          return cached || Response.error();
+        })
     );
     return;
   }
 
-  // Resto: cache-first con fallback a red
-  e.respondWith(
-    caches.match(e.request).then((cached) => cached || fetch(e.request))
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      const networkFetch = fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => cached);
+
+      return cached || networkFetch;
+    })
   );
 });

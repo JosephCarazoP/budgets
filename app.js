@@ -214,7 +214,7 @@ function renderKPIs() {
   const kpis = [
     { label: 'Ingresos totales', value: money(income), sub: `${state.sources.length} fuente(s)`,
       icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>` },
-    { label: 'Distribuido', value: money(distributed), sub: `Sin asignar: ${money(unassigned)}`,
+    { label: 'Presupuesto asignado', value: money(distributed), sub: `Monto total repartido en categorías · Sin asignar: ${money(unassigned)}`,
       icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` },
     { label: 'Gastos totales', value: money(expenses), sub: `${state.expenses.length} transacción(es)`,
       icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>` },
@@ -396,6 +396,9 @@ window.startEditSource = function(id) {
   $('source-submit-btn').textContent  = 'Actualizar fuente';
   $('source-form-title').textContent  = 'Editar fuente';
   $('cancel-edit-btn').style.display  = '';
+  $('source-form-card').style.display = '';
+  $('source-form-card').classList.add('is-open');
+  $('toggle-source-form').textContent = '−';
   switchTab('sources');
   $('source-name').focus();
 };
@@ -440,6 +443,9 @@ $('source-form').addEventListener('submit', (e) => {
     $('source-date').valueAsDate = new Date();
   }
   renderAll();
+  $('source-form-card').classList.remove('is-open');
+  $('source-form-card').style.display = 'none';
+  $('toggle-source-form').textContent = '+';
 });
 
 /* ============================================================
@@ -535,6 +541,9 @@ $('category-form').addEventListener('submit', (e) => {
   e.target.reset();
   $('category-color').value = '#3b82f6';
   renderAll();
+  $('category-form-card').classList.remove('is-open');
+  $('category-form-card').style.display = 'none';
+  $('toggle-category-form').textContent = '+';
   toast(`Categoría "${name}" creada`);
 });
 
@@ -606,6 +615,9 @@ $('expense-form').addEventListener('submit', (e) => {
   e.target.reset();
   const ebi = $('expense-budget-info'); if (ebi) ebi.style.display = 'none';
   renderAll();
+  $('expense-form-card').classList.remove('is-open');
+  $('expense-form-card').style.display = 'none';
+  $('toggle-expense-form').textContent = '+';
   toast(`Gasto de ${money(amount)} registrado`);
 });
 
@@ -773,6 +785,29 @@ function updateExpenseBudgetInfo() {
 
 $('expense-source').addEventListener('change', updateExpenseBudgetInfo);
 $('expense-category').addEventListener('change', updateExpenseBudgetInfo);
+
+function toggleCollapsibleCard(cardId, btnId) {
+  const card = $(cardId);
+  const btn = $(btnId);
+  if (!card || !btn) return;
+  const isHidden = card.style.display === 'none';
+
+  if (isHidden) {
+    card.style.display = '';
+    requestAnimationFrame(() => card.classList.add('is-open'));
+    btn.textContent = '−';
+    if (cardId === 'expense-form-card') updateExpenseBudgetInfo();
+    return;
+  }
+
+  card.classList.remove('is-open');
+  setTimeout(() => { card.style.display = 'none'; }, 220);
+  btn.textContent = '+';
+}
+
+$('toggle-source-form').addEventListener('click', () => toggleCollapsibleCard('source-form-card', 'toggle-source-form'));
+$('toggle-category-form').addEventListener('click', () => toggleCollapsibleCard('category-form-card', 'toggle-category-form'));
+$('toggle-expense-form').addEventListener('click', () => toggleCollapsibleCard('expense-form-card', 'toggle-expense-form'));
 
 /* ============================================================
    RENDER ALL / PER TAB
