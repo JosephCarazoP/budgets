@@ -1412,3 +1412,13 @@ details[open] > summary::before { transform: rotate(90deg); }
 .auth-card form{display:grid;gap:.65rem}
 .auth-card input{padding:.6rem .7rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
 .auth-card label{font-size:.85rem;color:var(--text-2);display:flex;gap:.5rem;align-items:center}
+
+
+.auth-card{backdrop-filter:blur(4px)}
+.auth-form{display:grid;gap:.75rem}
+.auth-label{font-size:.82rem;color:var(--text-2);font-weight:600}
+.auth-card input,.auth-card select{padding:.68rem .72rem;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text)}
+.auth-card input:focus,.auth-card select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent)}
+.auth-remember{display:flex;align-items:center;gap:.55rem;padding:.45rem .55rem;border:1px solid var(--border);border-radius:10px;background:var(--bg-alt)}
+.auth-remember input{margin:0}
+.auth-card .btn-primary{width:100%;padding:.7rem .9rem;border-radius:10px}

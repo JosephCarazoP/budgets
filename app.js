@@ -144,6 +144,12 @@ function isTrustedDevice() {
   return Boolean(state.security?.trustedDevices?.[DEVICE_KEY]);
 }
 
+
+function untrustDevice() {
+  if (!state.security?.trustedDevices) return;
+  delete state.security.trustedDevices[DEVICE_KEY];
+}
+
 async function requireAuthGate() {
   const overlay = $('auth-overlay');
   const card = $('auth-card');
@@ -160,22 +166,22 @@ async function requireAuthGate() {
 
   const firstTime = !state.security?.passwordHash;
   card.innerHTML = firstTime ? `
-    <h2>Configurar contraseña</h2>
-    <p>Protegé tu presupuesto antes de continuar.</p>
-    <form id="auth-form">
+    <h2>Protección de acceso</h2>
+    <p>Configura una contraseña para bloquear el acceso a tus finanzas.</p>
+    <form id="auth-form" class="auth-form">
       <input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="6" />
       <input id="auth-pass2" type="password" placeholder="Confirmar contraseña" required minlength="6" />
-      <label>Caducidad de contraseña</label>
+      <label class="auth-label" for="auth-rotation">Cambio obligatorio cada</label>
       <select id="auth-rotation" required>${ALLOWED_ROTATION_DAYS.map((d)=>`<option value="${d}" ${d===30?'selected':''}>${d} días</option>`).join('')}</select>
-      <label><input type="checkbox" id="auth-remember" checked /> Recordarme en este dispositivo</label>
+      <label class="auth-remember"><input type="checkbox" id="auth-remember" checked /> <span>Recordarme en este dispositivo</span></label>
       <button class="btn-primary" type="submit">Guardar y entrar</button>
     </form>` : `
-    <h2>${isPasswordExpired() ? 'Contraseña vencida' : 'Ingresar contraseña'}</h2>
+    <h2>${isPasswordExpired() ? 'Cambio de contraseña requerido' : 'Verificar acceso'}</h2>
     <p>${isPasswordExpired() ? 'Debes cambiar tu contraseña para continuar.' : 'Este dispositivo no está autorizado.'}</p>
-    <form id="auth-form">
+    <form id="auth-form" class="auth-form">
       <input id="auth-old" type="password" placeholder="Contraseña actual" required />
       ${isPasswordExpired() ? '<input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="6" /><input id="auth-pass2" type="password" placeholder="Confirmar nueva contraseña" required minlength="6" />' : ''}
-      <label><input type="checkbox" id="auth-remember" checked /> Recordarme en este dispositivo</label>
+      <label class="auth-remember"><input type="checkbox" id="auth-remember" checked /> <span>Recordarme en este dispositivo</span></label>
       <button class="btn-primary" type="submit">Entrar</button>
     </form>`;
 
@@ -200,6 +206,7 @@ async function requireAuthGate() {
       }
       state.security.changedAt = new Date().toISOString();
       if ($('auth-remember')?.checked) trustDevice();
+      else untrustDevice();
       save();
       overlay.style.display = 'none';
       app.style.display = '';
