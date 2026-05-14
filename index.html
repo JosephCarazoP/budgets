@@ -288,14 +288,17 @@
   </div>
 
   <!-- CALCULATOR FAB -->
-  <button id="calc-fab" class="calc-fab" title="Calculadora">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <rect x="4" y="2" width="16" height="20" rx="2"/>
-      <line x1="8" y1="6" x2="16" y2="6"/>
+<div id="calc-drawer" class="calc-drawer">
+  <button id="calc-tab" class="calc-tab" aria-label="Abrir calculadora">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/>
       <line x1="8" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="16" y2="10"/>
       <line x1="8" y1="14" x2="10" y2="14"/><line x1="14" y1="14" x2="16" y2="14"/>
       <line x1="8" y1="18" x2="10" y2="18"/><line x1="14" y1="18" x2="16" y2="18"/>
     </svg>
+    <div class="calc-tab-grip">
+      <span></span><span></span><span></span>
+    </div>
   </button>
 
   <!-- CALCULATOR PANEL -->
@@ -337,7 +340,8 @@
       <button class="calc-btn calc-eq" data-action="equals">=</button>
     </div>
   </div>
-
+</div>
+  
   <!-- Service Worker: actualización controlada de la PWA -->
   <script>
     if ('serviceWorker' in navigator) {
