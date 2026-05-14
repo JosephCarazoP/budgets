@@ -35,6 +35,43 @@ function getSession() {
 function setSession(token, expiresAt) { localStorage.setItem(SESSION_KEY, JSON.stringify({ token, expiresAt })); }
 function clearSession() { localStorage.removeItem(SESSION_KEY); }
 
+/* ---- Cloud sync helpers (Supabase row budget_state/default) ---- */
+async function pullAuthCfgFromCloud() {
+  if (!window.db || !window.STATE_ROW_ID) return null;
+  try {
+    const { data, error } = await window.db
+      .from('budget_state')
+      .select('data')
+      .eq('id', window.STATE_ROW_ID)
+      .single();
+    if (error) return null;
+    return data?.data?._authCfg || null;
+  } catch {
+    return null;
+  }
+}
+
+async function pushAuthCfgToCloud(cfg) {
+  if (!window.db || !window.STATE_ROW_ID) return;
+  try {
+    const { data, error } = await window.db
+      .from('budget_state')
+      .select('data')
+      .eq('id', window.STATE_ROW_ID)
+      .single();
+    if (error || !data?.data) return;
+    const merged = { ...data.data };
+    if (cfg) merged._authCfg = cfg;
+    else delete merged._authCfg;
+    await window.db
+      .from('budget_state')
+      .update({ data: merged, updated_at: new Date().toISOString() })
+      .eq('id', window.STATE_ROW_ID);
+  } catch {
+    // No bloquear la UX por fallos de red
+  }
+}
+
 /* ---- Public API ---- */
 const Auth = {
 
@@ -77,7 +114,9 @@ const Auth = {
     const hash      = await sha256(plain);
     const createdAt = now();
     const expiresAt = createdAt + daysMs(durationDays);
-    setAuthCfg({ hash, createdAt, expiresAt, durationDays });
+    const cfg = { hash, createdAt, expiresAt, durationDays };
+    setAuthCfg(cfg);
+    await pushAuthCfgToCloud(cfg);
     clearSession();          // Forzar re-login en todos los dispositivos
   },
 
@@ -85,6 +124,7 @@ const Auth = {
   removePassword() {
     localStorage.removeItem(AUTH_KEY);
     clearSession();
+    void pushAuthCfgToCloud(null);
   },
 
   /* ---- Estado de vigencia ---- */
@@ -116,6 +156,12 @@ const Auth = {
   /** Punto de entrada principal. Llama esto antes de mostrar la app. */
   async init(onUnlocked) {
     Auth._onUnlocked = onUnlocked;
+
+    // Si este dispositivo no tiene configuración local, intentar hidratarla desde la nube.
+    if (!Auth.isConfigured()) {
+      const cloudCfg = await pullAuthCfgFromCloud();
+      if (cloudCfg?.hash) setAuthCfg(cloudCfg);
+    }
 
     if (!Auth.isConfigured()) {
       // Primera vez: mostrar pantalla de creación de contraseña
