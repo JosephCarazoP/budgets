@@ -1588,19 +1588,31 @@ function calcPercent() {
   calcRender();
 }
 
-// FAB toggle
-$('calc-fab').addEventListener('click', () => {
-  const panel = $('calc-panel');
-  const open = panel.style.display !== 'none';
-  panel.style.display = open ? 'none' : '';
-  $('calc-fab').classList.toggle('is-open', !open);
-  if (!open) { panel.style.animation = 'none'; requestAnimationFrame(() => panel.style.animation = ''); }
-  calcRender();
+// CALC DRAWER toggle
+const calcDrawer = $('calc-drawer');
+const calcPanel  = $('calc-panel');
+
+$('calc-tab').addEventListener('click', () => {
+  const open = calcDrawer.classList.toggle('is-open');
+  // Mobile: usa clase distinta porque el panel es bottom sheet
+  if (window.innerWidth <= 768) {
+    calcDrawer.classList.remove('is-open');
+    calcPanel.classList.toggle('mobile-open', open);
+  }
+  if (open) calcRender();
 });
 
 $('calc-close').addEventListener('click', () => {
-  $('calc-panel').style.display = 'none';
-  $('calc-fab').classList.remove('is-open');
+  calcDrawer.classList.remove('is-open');
+  calcPanel.classList.remove('mobile-open');
+});
+
+// Keyboard: Escape cierra
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    calcDrawer.classList.remove('is-open');
+    calcPanel.classList.remove('mobile-open');
+  }
 });
 
 // Calculator button delegation
