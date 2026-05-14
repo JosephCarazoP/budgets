@@ -25,11 +25,28 @@ const DEFAULT_CATEGORIES = [
 
 const INITIAL = {
   sources: [], expenses: [], categories: DEFAULT_CATEGORIES,
-  theme: 'light', editingSourceId: null
+  assignments: [],
+  theme: 'light', editingSourceId: null, editingExpenseId: null, editingCategoryName: null
 };
 
 const state = { ...INITIAL, ...JSON.parse(localStorage.getItem('budget_state') || '{}') };
 if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+if (!Array.isArray(state.assignments)) state.assignments = [];
+
+function rebuildDistributionsFromAssignments() {
+  state.sources.forEach((s) => { s.distribution = {}; });
+  state.assignments.forEach((a) => {
+    const src = state.sources.find((s) => s.id === a.sourceId);
+    if (!src) return;
+    if (!src.distribution) src.distribution = {};
+    src.distribution[a.category] = (src.distribution[a.category] || 0) + Number(a.amount || 0);
+  });
+  state.sources.forEach((s) => {
+    Object.keys(s.distribution || {}).forEach((k) => {
+      if (s.distribution[k] <= 0) delete s.distribution[k];
+    });
+  });
+}
 
 /* ============================================================
    SUPABASE CLIENT
@@ -109,6 +126,18 @@ function save() {
     .then(({ error }) => {
       if (error) console.error('BudgetFlow: error al sincronizar con Supabase:', error);
     });
+}
+
+function migrateAssignmentsIfNeeded() {
+  if (state.assignments.length) return;
+  state.sources.forEach((s) => {
+    Object.entries(s.distribution || {}).forEach(([category, amount]) => {
+      if (Number(amount) > 0) {
+        state.assignments.push({ id: uid(), sourceId: s.id, category, amount: Number(amount), date: new Date().toISOString().slice(0, 10) });
+      }
+    });
+  });
+  rebuildDistributionsFromAssignments();
 }
 
 let toastTimer;
@@ -451,6 +480,15 @@ function renderSources() {
         <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
 
         ${distChips ? `<div class="dist-list">${distChips}</div>` : ''}
+        <div class="dist-list" style="margin-top:.5rem">
+          ${state.assignments.filter((a) => a.sourceId === s.id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6).map((a)=>`
+            <span class="dist-chip">
+              ${a.category}: ${money(a.amount)}
+              <button type="button" class="btn-link" onclick="startEditAssignment('${a.id}')">Editar</button>
+              <button type="button" class="btn-link" onclick="deleteAssignment('${a.id}')">Eliminar</button>
+            </span>
+          `).join('')}
+        </div>
 
         <form class="dist-form" style="margin-top:.75rem" onsubmit="addDistribution(event,'${s.id}')">
           <select name="category" required>
@@ -548,10 +586,37 @@ window.addDistribution = function(e, sourceId) {
   if (total > Number(source.amount)) {
     toast(`⚠️ Excede el total de la fuente (${money(source.amount)})`); return;
   }
-  source.distribution = dist;
+  state.assignments.push({ id: uid(), sourceId, category, amount, date: new Date().toISOString().slice(0, 10) });
+  rebuildDistributionsFromAssignments();
   e.target.reset();
   renderAll();
   toast(`Asignado ${money(amount)} a ${category}`);
+};
+
+window.deleteAssignment = function(id) {
+  if (!confirm('¿Eliminar esta asignación?')) return;
+  state.assignments = state.assignments.filter((a) => a.id !== id);
+  rebuildDistributionsFromAssignments();
+  renderAll();
+  toast('Asignación eliminada');
+};
+
+window.startEditAssignment = function(id) {
+  const a = state.assignments.find((x) => x.id === id);
+  if (!a) return;
+  const next = prompt('Nuevo monto para la asignación:', String(a.amount));
+  if (next === null) return;
+  const amount = Number(next);
+  if (!Number.isFinite(amount) || amount <= 0) { toast('⚠️ Monto inválido'); return; }
+  const source = state.sources.find((s) => s.id === a.sourceId);
+  if (!source) return;
+  const currentTotal = Object.values(source.distribution || {}).reduce((x,y)=>x+Number(y||0),0);
+  const projected = currentTotal - Number(a.amount) + amount;
+  if (projected > Number(source.amount)) { toast(`⚠️ Excede el total de la fuente (${money(source.amount)})`); return; }
+  a.amount = amount;
+  rebuildDistributionsFromAssignments();
+  renderAll();
+  toast('Asignación actualizada');
 };
 
 /* ============================================================
@@ -561,7 +626,10 @@ window.addDistribution = function(e, sourceId) {
 function renderCategories() {
   // chips
   $('category-list').innerHTML = state.categories.map((c) =>
-    `<span class="chip" style="background:${c.color}">${c.name}</span>`).join('');
+    `<span class="chip" style="background:${c.color}">${c.name}
+      <button type="button" class="btn-link" onclick="editCategory('${c.name.replace(/'/g, "\\'")}')">✎</button>
+      <button type="button" class="btn-link" onclick="deleteCategory('${c.name.replace(/'/g, "\\'")}')">✕</button>
+    </span>`).join('');
 
   // selects
   const opts = state.categories.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
@@ -621,10 +689,18 @@ $('category-form').addEventListener('submit', (e) => {
   const name  = $('category-name').value.trim();
   const color = $('category-color').value;
   if (!name) return;
-  if (state.categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+  if (!state.editingCategoryName && state.categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
     toast('⚠️ Esa categoría ya existe'); return;
   }
-  state.categories.push({ name, color });
+  if (state.editingCategoryName) {
+    const cat = state.categories.find((c)=>c.name===state.editingCategoryName);
+    if (cat) cat.color = color, cat.name = name;
+    state.expenses.forEach((ex)=>{ if (ex.category === state.editingCategoryName) ex.category = name; });
+    state.assignments.forEach((a)=>{ if (a.category === state.editingCategoryName) a.category = name; });
+    state.editingCategoryName = null;
+  } else {
+    state.categories.push({ name, color });
+  }
   e.target.reset();
   $('category-color').value = '#3b82f6';
   renderAll();
@@ -633,6 +709,26 @@ $('category-form').addEventListener('submit', (e) => {
   $('toggle-category-form').textContent = '+';
   toast(`Categoría "${name}" creada`);
 });
+
+window.editCategory = function(name) {
+  const cat = state.categories.find((c)=>c.name===name);
+  if (!cat) return;
+  $('category-name').value = cat.name;
+  $('category-color').value = cat.color;
+  state.editingCategoryName = name;
+  $('category-form-card').style.display = '';
+  $('category-form-card').classList.add('is-open');
+};
+
+window.deleteCategory = function(name) {
+  if (!confirm(`¿Eliminar categoría "${name}"?`)) return;
+  state.categories = state.categories.filter((c)=>c.name!==name);
+  state.assignments = state.assignments.filter((a)=>a.category!==name);
+  state.expenses = state.expenses.filter((e)=>e.category!==name);
+  rebuildDistributionsFromAssignments();
+  renderAll();
+  toast('Categoría eliminada');
+};
 
 /* ============================================================
    RENDER EXPENSES
@@ -657,7 +753,7 @@ function renderExpensesList() {
 
   el.innerHTML = `
     <div class="expense-table-header">
-      <span>Descripción</span><span>Categoría</span><span>Fuente</span><span>Monto</span><span>Fecha</span>
+      <span>Descripción</span><span>Categoría</span><span>Fuente</span><span>Monto</span><span>Fecha</span><span>Acciones</span>
     </div>` +
     list.map((e) => {
       const src = state.sources.find((s) => s.id === e.sourceId);
@@ -668,6 +764,7 @@ function renderExpensesList() {
         <div class="exp-tag" style="width:fit-content">${src?.name || '—'}</div>
         <div class="exp-amount">-${money(e.amount)}</div>
         <div class="exp-date">${fmt(e.date)}</div>
+        <div><button class="btn-link" onclick="editExpense('${e.id}')">Editar</button><button class="btn-link" onclick="deleteExpense('${e.id}')">Eliminar</button></div>
       </div>`;
     }).join('');
 }
@@ -698,15 +795,42 @@ $('expense-form').addEventListener('submit', (e) => {
   if (spent + amount > assigned) {
     toast(`⚠️ Excede el límite asignado (${money(assigned - spent)} disponible)`); return;
   }
-  state.expenses.push({ id: uid(), sourceId, category, amount, desc, date: new Date().toISOString().slice(0, 10) });
+  if (state.editingExpenseId) {
+    const ex = state.expenses.find((x)=>x.id===state.editingExpenseId);
+    if (ex) Object.assign(ex, { sourceId, category, amount, desc });
+    state.editingExpenseId = null;
+  } else {
+    state.expenses.push({ id: uid(), sourceId, category, amount, desc, date: new Date().toISOString().slice(0, 10) });
+  }
   e.target.reset();
   const ebi = $('expense-budget-info'); if (ebi) ebi.style.display = 'none';
   renderAll();
   $('expense-form-card').classList.remove('is-open');
   $('expense-form-card').style.display = 'none';
   $('toggle-expense-form').textContent = '+';
-  toast(`Gasto de ${money(amount)} registrado`);
+  toast(`Gasto de ${money(amount)} guardado`);
 });
+
+window.editExpense = function(id) {
+  const ex = state.expenses.find((x)=>x.id===id);
+  if (!ex) return;
+  state.editingExpenseId = id;
+  $('expense-source').value = ex.sourceId;
+  $('expense-category').value = ex.category;
+  $('expense-amount').value = ex.amount;
+  $('expense-desc').value = ex.desc;
+  _refreshCsel('expense-source'); _refreshCsel('expense-category');
+  $('expense-form-card').style.display = '';
+  $('expense-form-card').classList.add('is-open');
+  switchTab('expenses');
+};
+
+window.deleteExpense = function(id) {
+  if (!confirm('¿Eliminar este gasto?')) return;
+  state.expenses = state.expenses.filter((x)=>x.id!==id);
+  renderAll();
+  toast('Gasto eliminado');
+};
 
 /* ============================================================
    CUSTOM SELECT
@@ -1176,6 +1300,8 @@ function _startApp() {
     );
   }
   setupRealtime();
+  migrateAssignmentsIfNeeded();
+  rebuildDistributionsFromAssignments();
   applyTheme();   // Aplicar tema antes del overlay de auth
 
   await Auth.init(() => {
