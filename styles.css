@@ -719,7 +719,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 .expense-table-header {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
   padding: .5rem 1.25rem;
   font-size: .72rem;
   font-weight: 600;
@@ -731,7 +731,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 .expense-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
   padding: .75rem 1.25rem;
   border-bottom: 1px solid var(--border);
   align-items: center;
@@ -752,6 +752,38 @@ details[open] > summary::before { transform: rotate(90deg); }
   background: var(--bg-alt); color: var(--text-2);
 }
 .exp-date { font-size: .78rem; color: var(--text-3); }
+
+.expense-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .45rem;
+}
+
+.expense-action-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text-2);
+  font-size: .74rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: .26rem .62rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.expense-action-btn:hover {
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-alt));
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  color: var(--text);
+}
+
+.expense-action-btn.danger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-alt));
+  border-color: color-mix(in srgb, var(--danger) 26%, var(--border));
+  color: var(--danger);
+}
 
 /* ============================================================
    CHIPS
@@ -1355,6 +1387,11 @@ details[open] > summary::before { transform: rotate(90deg); }
     grid-template-columns: 1fr auto;
     grid-template-rows: auto auto;
     gap: .25rem;
+  }
+  .expense-actions {
+    justify-content: flex-start;
+    margin-top: .15rem;
+    grid-column: 1 / -1;
   }
   .exp-date, .exp-tag { font-size: .7rem; }
 

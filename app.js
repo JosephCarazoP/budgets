@@ -764,7 +764,10 @@ function renderExpensesList() {
         <div class="exp-tag" style="width:fit-content">${src?.name || '—'}</div>
         <div class="exp-amount">-${money(e.amount)}</div>
         <div class="exp-date">${fmt(e.date)}</div>
-        <div><button class="btn-link" onclick="editExpense('${e.id}')">Editar</button><button class="btn-link" onclick="deleteExpense('${e.id}')">Eliminar</button></div>
+        <div class="expense-actions">
+          <button class="expense-action-btn" onclick="editExpense('${e.id}')">Editar</button>
+          <button class="expense-action-btn danger" onclick="deleteExpense('${e.id}')">Eliminar</button>
+        </div>
       </div>`;
     }).join('');
 }
