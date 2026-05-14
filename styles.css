@@ -1273,10 +1273,20 @@ details[open] > summary::before { transform: rotate(90deg); }
    ============================================================ */
 
 @media (max-width: 768px) {
-  /* El drawer lateral desaparece en mobile */
-  .calc-drawer { display: none; }
+  /* Mantener montado el drawer para poder abrir el panel en mobile */
+  .calc-drawer {
+    display: block;
+    position: fixed;
+    right: .75rem;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px) + .5rem);
+    z-index: 520;
+    pointer-events: none;
+  }
+  .calc-tab {
+    position: static;
+    pointer-events: all;
+  }
 
-  /* Botón en el bottom-nav (ver HTML abajo) */
   .calc-panel {
     position: fixed;
     bottom: 0; right: 0; left: 0;
