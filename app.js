@@ -1644,7 +1644,8 @@ $('calc-panel').addEventListener('click', (e) => {
 
 // Keyboard support (when calc is open)
 document.addEventListener('keydown', (e) => {
-  if ($('calc-panel').style.display === 'none') return;
+  const calcIsOpen = calcDrawer.classList.contains('is-open') || calcPanel.classList.contains('mobile-open');
+  if (!calcIsOpen) return;
   const map = { '0':'0','1':'1','2':'2','3':'3','4':'4','5':'5','6':'6','7':'7','8':'8','9':'9',
     '+':'+','-':'−','*':'×','/':'÷','.':'.',
     'Enter':'=','=':'=','Backspace':'back','Escape':'esc','%':'%' };
@@ -1660,7 +1661,10 @@ document.addEventListener('keydown', (e) => {
     }
     calcRender();
   }
-  else if (k === 'esc') { $('calc-panel').style.display = 'none'; $('calc-fab').style.display = ''; }
+  else if (k === 'esc') {
+    calcDrawer.classList.remove('is-open');
+    calcPanel.classList.remove('mobile-open');
+  }
   else if (k === '%') calcPercent();
   else calcInput(k);
 });
