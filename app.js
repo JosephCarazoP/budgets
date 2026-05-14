@@ -1588,19 +1588,19 @@ function calcPercent() {
   calcRender();
 }
 
-// FAB toggle — hide FAB when panel is open
+// FAB toggle
 $('calc-fab').addEventListener('click', () => {
-  onst panel = $('calc-panel');
+  const panel = $('calc-panel');
   const open = panel.style.display !== 'none';
   panel.style.display = open ? 'none' : '';
-  calc-fab.classList.toggle('is-open', !open);
+  $('calc-fab').classList.toggle('is-open', !open);
   if (!open) { panel.style.animation = 'none'; requestAnimationFrame(() => panel.style.animation = ''); }
   calcRender();
 });
 
 $('calc-close').addEventListener('click', () => {
   $('calc-panel').style.display = 'none';
-  $('calc-fab').style.display = '';
+  $('calc-fab').classList.remove('is-open');
 });
 
 // Calculator button delegation
