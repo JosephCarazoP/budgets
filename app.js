@@ -1049,7 +1049,36 @@ function renderCatSummary() {
 
 /* ============================================================
    INIT  (async: carga Supabase primero, localStorage como fallback)
+   Envuelto en Auth.init para protección por contraseña.
    ============================================================ */
+
+function _startApp() {
+  // Botones de seguridad — sidebar y mobile
+  function openSecurityModal() {
+    const overlay = document.getElementById('security-modal-overlay');
+    const body    = document.getElementById('security-modal-body');
+    if (!overlay || !body) return;
+    body.innerHTML = Auth.renderSettingsPanel();
+    Auth.bindSettingsEvents();
+    overlay.style.display = 'flex';
+  }
+
+  document.getElementById('security-btn')?.addEventListener('click', openSecurityModal);
+  document.getElementById('security-btn-mobile')?.addEventListener('click', openSecurityModal);
+  document.getElementById('security-modal-close')?.addEventListener('click', () => {
+    document.getElementById('security-modal-overlay').style.display = 'none';
+  });
+  document.getElementById('security-modal-overlay')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('security-modal-overlay'))
+      document.getElementById('security-modal-overlay').style.display = 'none';
+  });
+
+  $('source-date').valueAsDate = new Date();
+  applyTheme();
+  renderAll();
+  initCustomSelects();
+  switchTab('dashboard');
+}
 
 (async () => {
   const fromCloud = await loadFromSupabase();
@@ -1060,9 +1089,9 @@ function renderCatSummary() {
     );
   }
   setupRealtime();
-  $('source-date').valueAsDate = new Date();
-  applyTheme();
-  renderAll();
-  initCustomSelects();
-  switchTab('dashboard');
+  applyTheme();   // Aplicar tema antes del overlay de auth
+
+  await Auth.init(() => {
+    _startApp();
+  });
 })();
