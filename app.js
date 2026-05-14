@@ -121,29 +121,135 @@ function save() {
 const DEVICE_KEY = localStorage.getItem('budget_device_key') || uid();
 localStorage.setItem('budget_device_key', DEVICE_KEY);
 const ALLOWED_ROTATION_DAYS = [15, 30, 60, 90, 180];
+/* ============================================================
+SECURITY UTILITIES — Reemplaza las funciones existentes
+============================================================ */
+
+const ALLOWED_ROTATION_DAYS = [15, 30, 60, 90, 180];
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 10;
+
+/* Contraseñas comunes que no se permiten */
+const COMMON_PASSWORDS = [
+  'password', 'contraseña', '12345678', '123456789', '1234567890',
+  'qwerty123', 'qwertyui', 'abc12345', 'password1', 'pass1234',
+  'admin123', 'letmein1', 'welcome1', 'monkey12', 'shadow12',
+  'sunshine', 'princess', 'football', 'baseball', 'iloveyou',
+  'trustno1', 'superman', 'batman12', 'master12', 'dragon12',
+];
+
+/* ---------- Hashing (PBKDF2 + salt) ---------- */
+
+async function deriveKey(password, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', enc.encode(password),
+    { name: 'PBKDF2' }, false, ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: enc.encode(salt), iterations: 200000, hash: 'SHA-256' },
+    keyMaterial, 256
+  );
+  return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function generateSalt() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/* Compatibilidad: si el hash anterior era SHA-256 simple, se migra al guardar nueva clave */
+async function sha256(text) {
+  const data = new TextEncoder().encode(text);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hashPassword(raw) {
+  const salt = generateSalt();
+  const hash = await deriveKey(raw, salt);
+  return { hash, salt };
+}
+
+async function verifyPassword(raw) {
+  const sec = state.security;
+  if (!sec.passwordHash) return false;
+  /* Detectar si usa el formato legado (sin salt) */
+  if (!sec.salt) {
+    return (await sha256(raw)) === sec.passwordHash;
+  }
+  return (await deriveKey(raw, sec.salt)) === sec.passwordHash;
+}
+
+/* ---------- Fortaleza de contraseña ---------- */
+
+function getPasswordScore(password) {
+  let score = 0;
+  if (password.length >= 8)  score++;
+  if (password.length >= 12) score++;
+  if (/[A-ZÁÉÍÓÚÑ]/.test(password)) score++;
+  if (/[a-záéíóúñ]/.test(password)) score++;
+  if (/\d/.test(password)) score++;
+  if (/[^A-Za-záéíóúñÁÉÍÓÚÑ0-9]/.test(password)) score++;
+  /* Penalizar si es contraseña común */
+  if (COMMON_PASSWORDS.some(c => password.toLowerCase().includes(c))) score = Math.min(score, 1);
+  if (score <= 1) return 1;
+  if (score <= 3) return 2;
+  if (score <= 4) return 3;
+  return 4;
+}
+
+const STRENGTH_LABELS = ['', 'Muy débil', 'Débil', 'Buena', 'Fuerte'];
+
 function validatePasswordStrength(password) {
   if (password.length < 8) return 'Debe tener al menos 8 caracteres';
   if (!/[A-ZÁÉÍÓÚÑ]/.test(password)) return 'Incluye al menos una mayúscula';
   if (!/[a-záéíóúñ]/.test(password)) return 'Incluye al menos una minúscula';
   if (!/\d/.test(password)) return 'Incluye al menos un número';
+  if (COMMON_PASSWORDS.some(c => password.toLowerCase().includes(c))) return 'Esa contraseña es demasiado común';
   return '';
 }
 
-async function sha256(text) {
-  const data = new TextEncoder().encode(text);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-async function verifyPassword(raw) {
-  return (await sha256(raw)) === state.security.passwordHash;
+/* ---------- Brute-force protection ---------- */
+
+function getAttemptData() {
+  try {
+    return JSON.parse(localStorage.getItem('budget_auth_attempts') || '{"count":0,"lockedUntil":null}');
+  } catch { return { count: 0, lockedUntil: null }; }
 }
 
-function isPasswordExpired() {
-  if (!state.security?.passwordHash || !state.security?.changedAt) return false;
-  const days = ALLOWED_ROTATION_DAYS.includes(Number(state.security.rotationDays)) ? Number(state.security.rotationDays) : 30;
-  const ms = Date.now() - new Date(state.security.changedAt).getTime();
-  return ms > days * 24 * 60 * 60 * 1000;
+function saveAttemptData(data) {
+  localStorage.setItem('budget_auth_attempts', JSON.stringify(data));
 }
+
+function recordFailedAttempt() {
+  const data = getAttemptData();
+  data.count = (data.count || 0) + 1;
+  if (data.count >= MAX_ATTEMPTS) {
+    data.lockedUntil = Date.now() + LOCKOUT_MINUTES * 60 * 1000;
+    data.count = 0;
+  }
+  saveAttemptData(data);
+  return data;
+}
+
+function clearAttempts() {
+  localStorage.removeItem('budget_auth_attempts');
+}
+
+function getLockoutRemaining() {
+  const data = getAttemptData();
+  if (!data.lockedUntil) return 0;
+  const remaining = data.lockedUntil - Date.now();
+  return remaining > 0 ? remaining : 0;
+}
+
+function getRemainingAttempts() {
+  const data = getAttemptData();
+  return MAX_ATTEMPTS - (data.count || 0);
+}
+
+/* ---------- Trusted devices ---------- */
 
 function trustDevice() {
   if (!state.security.trustedDevices) state.security.trustedDevices = {};
@@ -154,17 +260,31 @@ function isTrustedDevice() {
   return Boolean(state.security?.trustedDevices?.[DEVICE_KEY]);
 }
 
-
 function untrustDevice() {
   if (!state.security?.trustedDevices) return;
   delete state.security.trustedDevices[DEVICE_KEY];
 }
 
+/* ---------- Expiry ---------- */
+
+function isPasswordExpired() {
+  if (!state.security?.passwordHash || !state.security?.changedAt) return false;
+  const days = ALLOWED_ROTATION_DAYS.includes(Number(state.security.rotationDays))
+    ? Number(state.security.rotationDays) : 30;
+  const ms = Date.now() - new Date(state.security.changedAt).getTime();
+  return ms > days * 24 * 60 * 60 * 1000;
+}
+
+/* ============================================================
+AUTH GATE — Reemplaza la función requireAuthGate existente
+============================================================ */
+
 async function requireAuthGate() {
   const overlay = $('auth-overlay');
-  const card = $('auth-card');
-  const app = $('app-shell');
+  const card    = $('auth-card');
+  const app     = $('app-shell');
   const forceLogin = state.security?.passwordHash && (!isTrustedDevice() || isPasswordExpired());
+
   if (!state.security?.passwordHash || forceLogin) {
     app.style.display = 'none';
     overlay.style.display = '';
@@ -175,57 +295,255 @@ async function requireAuthGate() {
   }
 
   const firstTime = !state.security?.passwordHash;
-  card.innerHTML = firstTime ? `
-    <h2>Protección de acceso</h2>
-    <p>Configura una contraseña segura para bloquear el acceso a tus finanzas.</p>
-    <form id="auth-form" class="auth-form">
-      <input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="8" autocomplete="new-password" />
-      <input id="auth-pass2" type="password" placeholder="Confirmar contraseña" required minlength="8" autocomplete="new-password" />
-      <small class="auth-hint">Mínimo 8 caracteres, con mayúscula, minúscula y número.</small>
-      <label class="auth-label" for="auth-rotation">Cambio obligatorio cada</label>
-      <select id="auth-rotation" required>${ALLOWED_ROTATION_DAYS.map((d)=>`<option value="${d}" ${d===30?'selected':''}>${d} días</option>`).join('')}</select>
-      <label class="auth-remember"><input type="checkbox" id="auth-remember" checked /> <span>Recordarme en este dispositivo</span></label>
-      <button class="btn-primary" type="submit">Guardar y entrar</button>
-    </form>` : `
-    <h2>${isPasswordExpired() ? 'Cambio de contraseña requerido' : 'Verificar acceso'}</h2>
-    <p>${isPasswordExpired() ? 'Debes cambiar tu contraseña para continuar.' : 'Este dispositivo no está autorizado.'}</p>
-    <form id="auth-form" class="auth-form">
-      <input id="auth-old" type="password" placeholder="Contraseña actual" required autocomplete="current-password" />
-      ${isPasswordExpired() ? '<input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="8" autocomplete="new-password" /><input id="auth-pass2" type="password" placeholder="Confirmar nueva contraseña" required minlength="8" autocomplete="new-password" /><small class="auth-hint">Usa una contraseña más fuerte que la anterior.</small>' : ''}
-      <label class="auth-remember"><input type="checkbox" id="auth-remember" checked /> <span>Recordarme en este dispositivo</span></label>
-      <button class="btn-primary" type="submit">Entrar</button>
-    </form>`;
+  const expired   = isPasswordExpired();
+
+  /* ---- Build the card HTML ---- */
+  if (firstTime) {
+    card.innerHTML = `
+      <div class="auth-brand">
+        <div class="auth-brand-icon">B</div>
+        <span class="auth-brand-name">BudgetFlow</span>
+      </div>
+      <h2>Crear contraseña</h2>
+      <p class="auth-subtitle">Protege el acceso a tus finanzas con una contraseña segura.</p>
+      <form id="auth-form" class="auth-form" autocomplete="on">
+        <div class="auth-field">
+          <label class="auth-field-label" for="auth-pass">Nueva contraseña</label>
+          <div class="auth-pass-wrap">
+            <input type="password" id="auth-pass" required minlength="8"
+                   autocomplete="new-password" placeholder="Mínimo 8 caracteres"
+                   aria-describedby="auth-strength-label auth-reqs">
+            <button type="button" class="auth-eye-btn" data-target="auth-pass" aria-label="Mostrar contraseña">
+              ${eyeIcon()}
+            </button>
+          </div>
+          <div class="auth-strength" id="auth-strength-wrap">
+            <div class="auth-strength-bar" id="auth-strength-bar">
+              <div class="auth-strength-seg" id="seg-1"></div>
+              <div class="auth-strength-seg" id="seg-2"></div>
+              <div class="auth-strength-seg" id="seg-3"></div>
+              <div class="auth-strength-seg" id="seg-4"></div>
+            </div>
+            <span class="auth-strength-label" id="auth-strength-label"></span>
+          </div>
+          <div class="auth-reqs" id="auth-reqs">
+            ${reqItem('req-len',   'Al menos 8 caracteres')}
+            ${reqItem('req-upper', 'Una mayúscula')}
+            ${reqItem('req-lower', 'Una minúscula')}
+            ${reqItem('req-num',   'Un número')}
+          </div>
+        </div>
+        <div class="auth-field">
+          <label class="auth-field-label" for="auth-pass2">Confirmar contraseña</label>
+          <div class="auth-pass-wrap">
+            <input type="password" id="auth-pass2" required minlength="8"
+                   autocomplete="new-password" placeholder="Repite la contraseña">
+            <button type="button" class="auth-eye-btn" data-target="auth-pass2" aria-label="Mostrar contraseña">
+              ${eyeIcon()}
+            </button>
+          </div>
+        </div>
+        <div class="auth-field">
+          <label class="auth-field-label" for="auth-rotation">Cambio obligatorio cada</label>
+          <select id="auth-rotation" class="auth-select" required>
+            ${ALLOWED_ROTATION_DAYS.map(d => `<option value="${d}"${d===30?' selected':''}>${d} días</option>`).join('')}
+          </select>
+        </div>
+        <label class="auth-remember">
+          <input type="checkbox" id="auth-remember" checked>
+          <span>Recordarme en este dispositivo</span>
+        </label>
+        <div class="auth-error-msg" id="auth-error"></div>
+        <button type="submit" class="auth-submit-btn" id="auth-submit-btn">
+          ${lockIcon()} Guardar y entrar
+        </button>
+      </form>`;
+  } else {
+    card.innerHTML = `
+      <div class="auth-brand">
+        <div class="auth-brand-icon">B</div>
+        <span class="auth-brand-name">BudgetFlow</span>
+      </div>
+      <h2>${expired ? 'Cambio de contraseña requerido' : 'Verificar acceso'}</h2>
+      <p class="auth-subtitle">${expired
+        ? 'Tu contraseña ha expirado. Debes crear una nueva para continuar.'
+        : 'Este dispositivo no está autorizado. Ingresa tu contraseña.'}</p>
+      <form id="auth-form" class="auth-form" autocomplete="on">
+        <div id="auth-lockout-banner"></div>
+        <div class="auth-field">
+          <label class="auth-field-label" for="auth-old">Contraseña actual</label>
+          <div class="auth-pass-wrap">
+            <input type="password" id="auth-old" required
+                   autocomplete="current-password" placeholder="Tu contraseña actual">
+            <button type="button" class="auth-eye-btn" data-target="auth-old" aria-label="Mostrar contraseña">
+              ${eyeIcon()}
+            </button>
+          </div>
+        </div>
+        ${expired ? `
+        <div class="auth-divider"></div>
+        <div class="auth-field">
+          <label class="auth-field-label" for="auth-pass">Nueva contraseña</label>
+          <div class="auth-pass-wrap">
+            <input type="password" id="auth-pass" required minlength="8"
+                   autocomplete="new-password" placeholder="Mínimo 8 caracteres">
+            <button type="button" class="auth-eye-btn" data-target="auth-pass" aria-label="Mostrar contraseña">
+              ${eyeIcon()}
+            </button>
+          </div>
+          <div class="auth-strength" id="auth-strength-wrap">
+            <div class="auth-strength-bar" id="auth-strength-bar">
+              <div class="auth-strength-seg" id="seg-1"></div>
+              <div class="auth-strength-seg" id="seg-2"></div>
+              <div class="auth-strength-seg" id="seg-3"></div>
+              <div class="auth-strength-seg" id="seg-4"></div>
+            </div>
+            <span class="auth-strength-label" id="auth-strength-label"></span>
+          </div>
+        </div>
+        <div class="auth-field">
+          <label class="auth-field-label" for="auth-pass2">Confirmar nueva contraseña</label>
+          <div class="auth-pass-wrap">
+            <input type="password" id="auth-pass2" required minlength="8"
+                   autocomplete="new-password" placeholder="Repite la nueva contraseña">
+            <button type="button" class="auth-eye-btn" data-target="auth-pass2" aria-label="Mostrar contraseña">
+              ${eyeIcon()}
+            </button>
+          </div>
+        </div>` : ''}
+        <label class="auth-remember">
+          <input type="checkbox" id="auth-remember" checked>
+          <span>Recordarme en este dispositivo</span>
+        </label>
+        <div class="auth-error-msg" id="auth-error"></div>
+        <button type="submit" class="auth-submit-btn" id="auth-submit-btn">
+          ${lockIcon()} ${expired ? 'Actualizar contraseña' : 'Entrar'}
+        </button>
+      </form>`;
+  }
+
+  /* ---- Wire up eye toggles ---- */
+  card.querySelectorAll('.auth-eye-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const inp = $(btn.dataset.target);
+      if (!inp) return;
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      btn.innerHTML = show ? eyeOffIcon() : eyeIcon();
+      btn.setAttribute('aria-label', show ? 'Ocultar contraseña' : 'Mostrar contraseña');
+    });
+  });
+
+  /* ---- Strength meter ---- */
+  const passInput = $('auth-pass');
+  if (passInput) {
+    passInput.addEventListener('input', () => updateStrengthUI(passInput.value));
+  }
+
+  /* ---- Req items ---- */
+  if (passInput && firstTime) {
+    passInput.addEventListener('input', () => updateReqs(passInput.value));
+  }
+
+  /* ---- Lockout UI ---- */
+  function refreshLockoutUI() {
+    const banner = $('auth-lockout-banner');
+    const submit = $('auth-submit-btn');
+    if (!banner) return;
+    const remaining = getLockoutRemaining();
+    if (remaining > 0) {
+      const mins = Math.ceil(remaining / 60000);
+      banner.innerHTML = `<div class="auth-lockout">
+        ${shieldIcon()} <span>Demasiados intentos fallidos. Espera <strong>${mins} min</strong> para intentar de nuevo.</span>
+      </div>`;
+      if (submit) submit.disabled = true;
+      setTimeout(refreshLockoutUI, 5000);
+    } else {
+      banner.innerHTML = '';
+      if (submit) submit.disabled = false;
+    }
+  }
+  refreshLockoutUI();
 
   return new Promise((resolve) => {
     $('auth-form').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const errorEl = $('auth-error');
+      const clearError = () => { if (errorEl) errorEl.textContent = ''; };
+      clearError();
+
+      /* Check lockout */
+      if (getLockoutRemaining() > 0) return;
+
       let passwordChanged = false;
+
       if (firstTime) {
         const p1 = $('auth-pass').value.trim();
         const p2 = $('auth-pass2').value.trim();
         const weakReason = validatePasswordStrength(p1);
-        if (weakReason) return toast(weakReason);
-        if (p1 !== p2) return toast('Las contraseñas no coinciden');
-        state.security.passwordHash = await sha256(p1);
+        if (weakReason) {
+          if (errorEl) errorEl.textContent = weakReason;
+          shakeCard(card);
+          return;
+        }
+        if (p1 !== p2) {
+          if (errorEl) errorEl.textContent = 'Las contraseñas no coinciden';
+          shakeCard(card);
+          return;
+        }
+        const { hash, salt } = await hashPassword(p1);
+        state.security.passwordHash = hash;
+        state.security.salt = salt;
         state.security.rotationDays = Number($('auth-rotation').value || 30);
+        state.security.algorithm = 'pbkdf2';
         passwordChanged = true;
+        clearAttempts();
       } else {
         const oldOk = await verifyPassword($('auth-old').value);
-        if (!oldOk) return toast('Contraseña incorrecta');
-        if (isPasswordExpired()) {
+        if (!oldOk) {
+          const data = recordFailedAttempt();
+          const remaining = getLockoutRemaining();
+          if (remaining > 0) {
+            refreshLockoutUI();
+            return;
+          }
+          const left = getRemainingAttempts();
+          if (errorEl) errorEl.textContent = left > 0
+            ? `Contraseña incorrecta. ${left} intento${left !== 1 ? 's' : ''} restante${left !== 1 ? 's' : ''}.`
+            : 'Contraseña incorrecta.';
+          shakeCard(card);
+          return;
+        }
+        clearAttempts();
+        if (expired) {
           const p1 = $('auth-pass').value.trim();
           const p2 = $('auth-pass2').value.trim();
           const weakReason = validatePasswordStrength(p1);
-          if (weakReason) return toast(weakReason);
-          if (p1 !== p2) return toast('Las contraseñas no coinciden');
-          if (await verifyPassword(p1)) return toast('La nueva contraseña debe ser diferente');
-          state.security.passwordHash = await sha256(p1);
+          if (weakReason) {
+            if (errorEl) errorEl.textContent = weakReason;
+            shakeCard(card);
+            return;
+          }
+          if (p1 !== p2) {
+            if (errorEl) errorEl.textContent = 'Las contraseñas no coinciden';
+            shakeCard(card);
+            return;
+          }
+          if (await verifyPassword(p1)) {
+            if (errorEl) errorEl.textContent = 'La nueva contraseña debe ser diferente';
+            shakeCard(card);
+            return;
+          }
+          const { hash, salt } = await hashPassword(p1);
+          state.security.passwordHash = hash;
+          state.security.salt = salt;
+          state.security.algorithm = 'pbkdf2';
           passwordChanged = true;
         }
       }
+
       if (passwordChanged) state.security.changedAt = new Date().toISOString();
-      if ($('auth-remember')?.checked) trustDevice();
-      else untrustDevice();
+      if ($('auth-remember')?.checked) trustDevice(); else untrustDevice();
       save();
       overlay.style.display = 'none';
       app.style.display = '';
@@ -234,32 +552,231 @@ async function requireAuthGate() {
   });
 }
 
+/* ============================================================
+SECURITY SETTINGS MODAL — Reemplaza openSecuritySettings
+============================================================ */
+
 function openSecuritySettings() {
-  const content = `<h3>Cambiar contraseña</h3>
-  <form id="security-form" class="form-grid" style="padding:1rem">
-    <div class="field"><label>Contraseña actual</label><input id="sec-old" type="password" required /></div>
-    <div class="field"><label>Nueva contraseña</label><input id="sec-new" type="password" minlength="8" required /></div>
-    <div class="field"><label>Confirmar nueva</label><input id="sec-new2" type="password" minlength="8" required /></div>
-    <div class="field"><label>Rotación (días)</label><select id="sec-days" required>${ALLOWED_ROTATION_DAYS.map((d)=>`<option value="${d}" ${Number(state.security.rotationDays||30)===d?"selected":""}>${d} días</option>`).join("")}</select></div>
-    <div class="field form-actions"><button class="btn-primary" type="submit">Guardar</button></div>
-  </form>`;
-  $('modal-content').innerHTML = content;
-  $('modal-overlay').style.display = '';
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  const sec = state.security;
+  const changedAt = sec.changedAt ? new Date(sec.changedAt) : null;
+  const daysAgo   = changedAt ? Math.floor((Date.now() - changedAt.getTime()) / 86400000) : null;
+  const rotDays   = ALLOWED_ROTATION_DAYS.includes(Number(sec.rotationDays)) ? Number(sec.rotationDays) : 30;
+  const daysLeft  = daysAgo !== null ? rotDays - daysAgo : null;
+  const expired   = isPasswordExpired();
+  const trustedCount = Object.keys(sec.trustedDevices || {}).length;
+
+  content.innerHTML = `
+    <div class="sec-modal-header">
+      <h3>⚙️ Configuración de seguridad</h3>
+      <button class="sec-modal-close" id="sec-close-btn" aria-label="Cerrar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="sec-modal-body">
+      <!-- Info section -->
+      <div>
+        <div class="sec-section-title">Estado actual</div>
+        <div style="display:flex;flex-direction:column;gap:.45rem">
+          <div class="sec-info-row">
+            <span class="sec-info-label">Algoritmo</span>
+            <span class="sec-info-val ok">${sec.algorithm === 'pbkdf2' ? 'PBKDF2 (seguro)' : 'SHA-256 (legado)'}</span>
+          </div>
+          <div class="sec-info-row">
+            <span class="sec-info-label">Última actualización</span>
+            <span class="sec-info-val">${changedAt ? changedAt.toLocaleDateString('es-CR') : '—'}</span>
+          </div>
+          <div class="sec-info-row">
+            <span class="sec-info-label">Vence en</span>
+            <span class="sec-info-val ${expired ? 'danger' : daysLeft !== null && daysLeft <= 7 ? 'warn' : 'ok'}">
+              ${daysLeft === null ? '—' : expired ? 'Expirada' : `${daysLeft} días`}
+            </span>
+          </div>
+          <div class="sec-info-row">
+            <span class="sec-info-label">Dispositivos confiables</span>
+            <span class="sec-info-val">${trustedCount}</span>
+          </div>
+        </div>
+      </div>
+      <!-- Change password form -->
+      <div>
+        <div class="sec-section-title">Cambiar contraseña</div>
+        <form id="security-form" style="display:flex;flex-direction:column;gap:.7rem">
+          <div class="sec-field">
+            <label for="sec-old">Contraseña actual</label>
+            <div class="auth-pass-wrap">
+              <input type="password" id="sec-old" class="auth-input" required placeholder="Contraseña actual" autocomplete="current-password">
+              <button type="button" class="auth-eye-btn" data-target="sec-old" aria-label="Mostrar">${eyeIcon()}</button>
+            </div>
+          </div>
+          <div class="sec-field">
+            <label for="sec-new">Nueva contraseña</label>
+            <div class="auth-pass-wrap">
+              <input type="password" id="sec-new" class="auth-input" minlength="8" required placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+              <button type="button" class="auth-eye-btn" data-target="sec-new" aria-label="Mostrar">${eyeIcon()}</button>
+            </div>
+            <div class="auth-strength" id="sec-strength-wrap">
+              <div class="auth-strength-bar" id="sec-strength-bar">
+                <div class="auth-strength-seg" id="sseg-1"></div>
+                <div class="auth-strength-seg" id="sseg-2"></div>
+                <div class="auth-strength-seg" id="sseg-3"></div>
+                <div class="auth-strength-seg" id="sseg-4"></div>
+              </div>
+              <span class="auth-strength-label" id="sec-strength-label"></span>
+            </div>
+          </div>
+          <div class="sec-field">
+            <label for="sec-new2">Confirmar nueva</label>
+            <div class="auth-pass-wrap">
+              <input type="password" id="sec-new2" class="auth-input" minlength="8" required placeholder="Repite la contraseña" autocomplete="new-password">
+              <button type="button" class="auth-eye-btn" data-target="sec-new2" aria-label="Mostrar">${eyeIcon()}</button>
+            </div>
+          </div>
+          <div class="sec-field">
+            <label for="sec-days">Rotación obligatoria cada</label>
+            <select id="sec-days" class="auth-select" required>
+              ${ALLOWED_ROTATION_DAYS.map(d => `<option value="${d}"${d===rotDays?' selected':''}>${d} días</option>`).join('')}
+            </select>
+          </div>
+          <div class="auth-error-msg" id="sec-error"></div>
+          <div style="display:flex;gap:.5rem;justify-content:flex-end;padding-top:.25rem">
+            <button type="button" id="sec-cancel-btn" class="btn-ghost">Cancelar</button>
+            <button type="submit" class="btn-primary" style="gap:.4rem">
+              ${lockIcon(14)} Guardar cambios
+            </button>
+          </div>
+        </form>
+      </div>
+      <!-- Danger zone -->
+      <div>
+        <div class="sec-section-title" style="color:var(--danger)">Zona de riesgo</div>
+        <button id="sec-revoke-btn" class="btn-danger" style="width:100%;justify-content:center;padding:.55rem 1rem;border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);border-radius:var(--radius)">
+          Revocar todos los dispositivos confiables
+        </button>
+      </div>
+    </div>`;
+
+  overlay.style.display = 'flex';
+
+  /* Eye toggles */
+  content.querySelectorAll('.auth-eye-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const inp = $(btn.dataset.target);
+      if (!inp) return;
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      btn.innerHTML = show ? eyeOffIcon() : eyeIcon();
+      btn.setAttribute('aria-label', show ? 'Ocultar' : 'Mostrar');
+    });
+  });
+
+  /* Strength on new password */
+  $('sec-new').addEventListener('input', () => {
+    updateStrengthUI($('sec-new').value, 'sseg-', 'sec-strength-label');
+  });
+
+  /* Close / cancel */
+  $('sec-close-btn').addEventListener('click',  () => { overlay.style.display = 'none'; });
+  $('sec-cancel-btn').addEventListener('click', () => { overlay.style.display = 'none'; });
+
+  /* Revoke devices */
+  $('sec-revoke-btn').addEventListener('click', () => {
+    if (!confirm('¿Revocar todos los dispositivos confiables? Todos deberán autenticarse de nuevo.')) return;
+    state.security.trustedDevices = {};
+    save();
+    overlay.style.display = 'none';
+    toast('Dispositivos confiables revocados');
+  });
+
+  /* Form submit */
   $('security-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    if ((await sha256($('sec-old').value)) !== state.security.passwordHash) return toast('Clave actual inválida');
-    const weakReason = validatePasswordStrength($('sec-new').value.trim());
-    if (weakReason) return toast(weakReason);
-    if ($('sec-new').value !== $('sec-new2').value) return toast('No coinciden');
-    if ((await sha256($('sec-new').value)) === state.security.passwordHash) return toast('Debe ser distinta a la actual');
-    state.security.passwordHash = await sha256($('sec-new').value);
+    const errEl = $('sec-error');
+    errEl.textContent = '';
+
+    if (!(await verifyPassword($('sec-old').value))) {
+      errEl.textContent = 'Contraseña actual incorrecta';
+      return;
+    }
+    const weak = validatePasswordStrength($('sec-new').value.trim());
+    if (weak) { errEl.textContent = weak; return; }
+    if ($('sec-new').value !== $('sec-new2').value) { errEl.textContent = 'Las contraseñas no coinciden'; return; }
+    if (await verifyPassword($('sec-new').value)) { errEl.textContent = 'Debe ser distinta a la actual'; return; }
+
+    const { hash, salt } = await hashPassword($('sec-new').value.trim());
+    state.security.passwordHash = hash;
+    state.security.salt = salt;
+    state.security.algorithm = 'pbkdf2';
     state.security.rotationDays = Number($('sec-days').value || 30);
     state.security.changedAt = new Date().toISOString();
-    state.security.trustedDevices = { [DEVICE_KEY]: new Date().toISOString() };
+    /* Re-trust current device */
+    trustDevice();
     save();
-    $('modal-overlay').style.display = 'none';
-    toast('Seguridad actualizada');
+    overlay.style.display = 'none';
+    toast('✅ Contraseña actualizada');
   });
+}
+
+/* ============================================================
+HELPERS — pequeños SVG e UI utilities
+============================================================ */
+
+function eyeIcon(size = 16) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+}
+function eyeOffIcon(size = 16) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+}
+function lockIcon(size = 15) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+}
+function shieldIcon(size = 16) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
+}
+function checkIcon(size = 13) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`;
+}
+
+function reqItem(id, label) {
+  return `<div class="auth-req" id="${id}">${checkIcon()} <span>${label}</span></div>`;
+}
+
+function updateReqs(val) {
+  const toggle = (id, met) => {
+    const el = $(id);
+    if (el) el.classList.toggle('met', met);
+  };
+  toggle('req-len',   val.length >= 8);
+  toggle('req-upper', /[A-ZÁÉÍÓÚÑ]/.test(val));
+  toggle('req-lower', /[a-záéíóúñ]/.test(val));
+  toggle('req-num',   /\d/.test(val));
+}
+
+function updateStrengthUI(val, segPrefix = 'seg-', labelId = 'auth-strength-label') {
+  const score = val.length ? getPasswordScore(val) : 0;
+  for (let i = 1; i <= 4; i++) {
+    const seg = $(`${segPrefix}${i}`);
+    if (!seg) continue;
+    seg.className = 'auth-strength-seg';
+    if (i <= score) seg.classList.add(`active-${score}`);
+  }
+  const label = $(labelId);
+  if (label) {
+    label.textContent = val.length ? STRENGTH_LABELS[score] : '';
+    label.className = `auth-strength-label${score ? ` strength-${score}` : ''}`;
+  }
+}
+
+function shakeCard(card) {
+  card.classList.remove('shake');
+  void card.offsetWidth;
+  card.classList.add('shake');
+  card.addEventListener('animationend', () => card.classList.remove('shake'), { once: true });
 }
 
 let toastTimer;
