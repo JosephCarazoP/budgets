@@ -6,8 +6,8 @@
    Supabase Dashboard → Settings → API
    ============================================================ */
 
-const SUPABASE_URL = 'https://jljdudxbggewxvqmxlvj.supabase.co';   // ej. https://xxxx.supabase.co
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsamR1ZHhiZ2dld3h2cW14bHZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MDMwNjYsImV4cCI6MjA5NDI3OTA2Nn0.eJAmo8cxkOr5em89domd0NWimI17TUAfaUH0Xo4Pncc';
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';   // ej. https://xxxx.supabase.co
+const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
 const STATE_ROW_ID = 'default';
 
 /* ============================================================
@@ -76,7 +76,7 @@ function setupRealtime() {
       if (remote._savedAt && remote._savedAt === state._savedAt) return;
       Object.assign(state, remote, { editingSourceId: state.editingSourceId });
       localStorage.setItem('budget_state', JSON.stringify(state));
-      renderAll();
+      renderOnly();
       toast('🔄 Sincronizado con otro dispositivo');
     })
     .subscribe();
@@ -626,12 +626,15 @@ function renderTab(tab) {
   }
 }
 
-function renderAll() {
+function renderOnly() {
   applyTheme();
   renderTab(currentTab);
-  // Keep expense selects always fresh
   renderFilters();
   renderCategories();
+}
+
+function renderAll() {
+  renderOnly();
   save();
 }
 
