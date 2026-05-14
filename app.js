@@ -1590,15 +1590,12 @@ function calcPercent() {
 
 // FAB toggle — hide FAB when panel is open
 $('calc-fab').addEventListener('click', () => {
-  const panel = $('calc-panel');
-  const open  = panel.style.display !== 'none';
+  onst panel = $('calc-panel');
+  const open = panel.style.display !== 'none';
   panel.style.display = open ? 'none' : '';
-  $('calc-fab').style.display = open ? '' : 'none';
-  if (!open) {
-    panel.style.animation = 'none';
-    requestAnimationFrame(() => { panel.style.animation = ''; });
-    calcRender();
-  }
+  calc-fab.classList.toggle('is-open', !open);
+  if (!open) { panel.style.animation = 'none'; requestAnimationFrame(() => panel.style.animation = ''); }
+  calcRender();
 });
 
 $('calc-close').addEventListener('click', () => {
