@@ -121,11 +121,21 @@ function save() {
 const DEVICE_KEY = localStorage.getItem('budget_device_key') || uid();
 localStorage.setItem('budget_device_key', DEVICE_KEY);
 const ALLOWED_ROTATION_DAYS = [15, 30, 60, 90, 180];
+function validatePasswordStrength(password) {
+  if (password.length < 8) return 'Debe tener al menos 8 caracteres';
+  if (!/[A-ZÁÉÍÓÚÑ]/.test(password)) return 'Incluye al menos una mayúscula';
+  if (!/[a-záéíóúñ]/.test(password)) return 'Incluye al menos una minúscula';
+  if (!/\d/.test(password)) return 'Incluye al menos un número';
+  return '';
+}
 
 async function sha256(text) {
   const data = new TextEncoder().encode(text);
   const hash = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function verifyPassword(raw) {
+  return (await sha256(raw)) === state.security.passwordHash;
 }
 
 function isPasswordExpired() {
@@ -167,10 +177,11 @@ async function requireAuthGate() {
   const firstTime = !state.security?.passwordHash;
   card.innerHTML = firstTime ? `
     <h2>Protección de acceso</h2>
-    <p>Configura una contraseña para bloquear el acceso a tus finanzas.</p>
+    <p>Configura una contraseña segura para bloquear el acceso a tus finanzas.</p>
     <form id="auth-form" class="auth-form">
-      <input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="6" />
-      <input id="auth-pass2" type="password" placeholder="Confirmar contraseña" required minlength="6" />
+      <input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="8" autocomplete="new-password" />
+      <input id="auth-pass2" type="password" placeholder="Confirmar contraseña" required minlength="8" autocomplete="new-password" />
+      <small class="auth-hint">Mínimo 8 caracteres, con mayúscula, minúscula y número.</small>
       <label class="auth-label" for="auth-rotation">Cambio obligatorio cada</label>
       <select id="auth-rotation" required>${ALLOWED_ROTATION_DAYS.map((d)=>`<option value="${d}" ${d===30?'selected':''}>${d} días</option>`).join('')}</select>
       <label class="auth-remember"><input type="checkbox" id="auth-remember" checked /> <span>Recordarme en este dispositivo</span></label>
@@ -179,8 +190,8 @@ async function requireAuthGate() {
     <h2>${isPasswordExpired() ? 'Cambio de contraseña requerido' : 'Verificar acceso'}</h2>
     <p>${isPasswordExpired() ? 'Debes cambiar tu contraseña para continuar.' : 'Este dispositivo no está autorizado.'}</p>
     <form id="auth-form" class="auth-form">
-      <input id="auth-old" type="password" placeholder="Contraseña actual" required />
-      ${isPasswordExpired() ? '<input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="6" /><input id="auth-pass2" type="password" placeholder="Confirmar nueva contraseña" required minlength="6" />' : ''}
+      <input id="auth-old" type="password" placeholder="Contraseña actual" required autocomplete="current-password" />
+      ${isPasswordExpired() ? '<input id="auth-pass" type="password" placeholder="Nueva contraseña" required minlength="8" autocomplete="new-password" /><input id="auth-pass2" type="password" placeholder="Confirmar nueva contraseña" required minlength="8" autocomplete="new-password" /><small class="auth-hint">Usa una contraseña más fuerte que la anterior.</small>' : ''}
       <label class="auth-remember"><input type="checkbox" id="auth-remember" checked /> <span>Recordarme en este dispositivo</span></label>
       <button class="btn-primary" type="submit">Entrar</button>
     </form>`;
@@ -188,23 +199,31 @@ async function requireAuthGate() {
   return new Promise((resolve) => {
     $('auth-form').addEventListener('submit', async (e) => {
       e.preventDefault();
+      let passwordChanged = false;
       if (firstTime) {
-        const p1 = $('auth-pass').value;
-        const p2 = $('auth-pass2').value;
+        const p1 = $('auth-pass').value.trim();
+        const p2 = $('auth-pass2').value.trim();
+        const weakReason = validatePasswordStrength(p1);
+        if (weakReason) return toast(weakReason);
         if (p1 !== p2) return toast('Las contraseñas no coinciden');
         state.security.passwordHash = await sha256(p1);
         state.security.rotationDays = Number($('auth-rotation').value || 30);
+        passwordChanged = true;
       } else {
-        const oldOk = (await sha256($('auth-old').value)) === state.security.passwordHash;
+        const oldOk = await verifyPassword($('auth-old').value);
         if (!oldOk) return toast('Contraseña incorrecta');
         if (isPasswordExpired()) {
-          const p1 = $('auth-pass').value;
-          const p2 = $('auth-pass2').value;
+          const p1 = $('auth-pass').value.trim();
+          const p2 = $('auth-pass2').value.trim();
+          const weakReason = validatePasswordStrength(p1);
+          if (weakReason) return toast(weakReason);
           if (p1 !== p2) return toast('Las contraseñas no coinciden');
+          if (await verifyPassword(p1)) return toast('La nueva contraseña debe ser diferente');
           state.security.passwordHash = await sha256(p1);
+          passwordChanged = true;
         }
       }
-      state.security.changedAt = new Date().toISOString();
+      if (passwordChanged) state.security.changedAt = new Date().toISOString();
       if ($('auth-remember')?.checked) trustDevice();
       else untrustDevice();
       save();
@@ -219,8 +238,8 @@ function openSecuritySettings() {
   const content = `<h3>Cambiar contraseña</h3>
   <form id="security-form" class="form-grid" style="padding:1rem">
     <div class="field"><label>Contraseña actual</label><input id="sec-old" type="password" required /></div>
-    <div class="field"><label>Nueva contraseña</label><input id="sec-new" type="password" minlength="6" required /></div>
-    <div class="field"><label>Confirmar nueva</label><input id="sec-new2" type="password" minlength="6" required /></div>
+    <div class="field"><label>Nueva contraseña</label><input id="sec-new" type="password" minlength="8" required /></div>
+    <div class="field"><label>Confirmar nueva</label><input id="sec-new2" type="password" minlength="8" required /></div>
     <div class="field"><label>Rotación (días)</label><select id="sec-days" required>${ALLOWED_ROTATION_DAYS.map((d)=>`<option value="${d}" ${Number(state.security.rotationDays||30)===d?"selected":""}>${d} días</option>`).join("")}</select></div>
     <div class="field form-actions"><button class="btn-primary" type="submit">Guardar</button></div>
   </form>`;
@@ -229,7 +248,10 @@ function openSecuritySettings() {
   $('security-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     if ((await sha256($('sec-old').value)) !== state.security.passwordHash) return toast('Clave actual inválida');
+    const weakReason = validatePasswordStrength($('sec-new').value.trim());
+    if (weakReason) return toast(weakReason);
     if ($('sec-new').value !== $('sec-new2').value) return toast('No coinciden');
+    if ((await sha256($('sec-new').value)) === state.security.passwordHash) return toast('Debe ser distinta a la actual');
     state.security.passwordHash = await sha256($('sec-new').value);
     state.security.rotationDays = Number($('sec-days').value || 30);
     state.security.changedAt = new Date().toISOString();

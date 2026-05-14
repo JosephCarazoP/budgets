@@ -166,8 +166,8 @@ a { color: inherit; text-decoration: none; }
 
 .content {
   flex: 1;
-  padding: 2rem;
-  max-width: 1080px;
+  padding: 2rem clamp(1rem, 2.5vw, 2rem);
+  max-width: 1200px;
   width: 100%;
   margin: 0 auto;
 }
@@ -1330,15 +1330,15 @@ details[open] > summary::before { transform: rotate(90deg); }
     background: var(--card);
     border-bottom: 1px solid var(--border);
     position: sticky;
-    top: .5rem;
-    margin: 0 .5rem .5rem;
-    border-radius: 12px;
+    top: 0;
+    margin: 0;
+    border-radius: 0;
     z-index: 100;
   }
 
   .topbar .logo { font-size: .9rem; }
 
-  .content { padding: 1rem; }
+  .content { padding: .9rem .8rem; }
 
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .charts-grid { grid-template-columns: 1fr; }
@@ -1401,24 +1401,25 @@ details[open] > summary::before { transform: rotate(90deg); }
 @media (min-width: 769px) and (max-width: 1024px) {
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .charts-grid { grid-template-columns: 1fr 1fr; }
-  :root { --sidebar-w: 200px; }
+  :root { --sidebar-w: 212px; }
   .form-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
-.auth-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:5000;padding:1rem}
-.auth-card{width:min(420px,100%);background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1rem;box-shadow:var(--shadow-md)}
-.auth-card h2{margin-bottom:.5rem}
-.auth-card p{color:var(--text-2);font-size:.9rem;margin-bottom:1rem}
-.auth-card form{display:grid;gap:.65rem}
-.auth-card input{padding:.6rem .7rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
+.auth-overlay{position:fixed;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.55),rgba(0,0,0,.7));display:flex;align-items:center;justify-content:center;z-index:5000;padding:1rem}
+.auth-card{width:min(460px,100%);background:var(--card);border:1px solid var(--border);border-radius:16px;padding:1.2rem;box-shadow:var(--shadow-md);backdrop-filter:blur(4px)}
+.auth-card h2{margin-bottom:.55rem;font-size:1.25rem;line-height:1.2}
+.auth-card p{color:var(--text-2);font-size:.92rem;margin-bottom:1rem}
+.auth-card form{display:grid;gap:.7rem}
 .auth-card label{font-size:.85rem;color:var(--text-2);display:flex;gap:.5rem;align-items:center}
-
-
-.auth-card{backdrop-filter:blur(4px)}
 .auth-form{display:grid;gap:.75rem}
 .auth-label{font-size:.82rem;color:var(--text-2);font-weight:600}
 .auth-card input,.auth-card select{padding:.68rem .72rem;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text)}
 .auth-card input:focus,.auth-card select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent)}
 .auth-remember{display:flex;align-items:center;gap:.55rem;padding:.45rem .55rem;border:1px solid var(--border);border-radius:10px;background:var(--bg-alt)}
 .auth-remember input{margin:0}
+.auth-hint{font-size:.78rem;color:var(--text-2);line-height:1.3}
 .auth-card .btn-primary{width:100%;padding:.7rem .9rem;border-radius:10px}
+@media (max-width: 520px){
+  .auth-overlay{padding:.5rem}
+  .auth-card{padding:1rem;border-radius:12px}
+}
