@@ -392,6 +392,7 @@ window.startEditSource = function(id) {
   $('source-amount').value = s.amount;
   $('source-date').value   = s.date;
   $('source-status').value = s.status;
+  _refreshCsel('source-status');
   $('source-submit-btn').textContent  = 'Actualizar fuente';
   $('source-form-title').textContent  = 'Editar fuente';
   $('cancel-edit-btn').style.display  = '';
@@ -476,6 +477,8 @@ function renderCategories() {
   const opts = state.categories.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
   $('expense-category').innerHTML  = opts;
   $('filter-category').innerHTML   = `<option value="">Todas las categorías</option>${opts}`;
+  _refreshCsel('expense-category');
+  _refreshCsel('filter-category');
 
   const map = categoryMap();
   const el  = $('categories');
@@ -577,6 +580,8 @@ function renderFilters() {
   $('expense-source').innerHTML   = state.sources.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
   $('filter-source').innerHTML    = `<option value="">Todas las fuentes</option>` +
     state.sources.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  _refreshCsel('expense-source');
+  _refreshCsel('filter-source');
 }
 
 $('filter-source').addEventListener('change', renderExpensesList);
@@ -599,9 +604,175 @@ $('expense-form').addEventListener('submit', (e) => {
   }
   state.expenses.push({ id: uid(), sourceId, category, amount, desc, date: new Date().toISOString().slice(0, 10) });
   e.target.reset();
+  const ebi = $('expense-budget-info'); if (ebi) ebi.style.display = 'none';
   renderAll();
   toast(`Gasto de ${money(amount)} registrado`);
 });
+
+/* ============================================================
+   CUSTOM SELECT
+   ============================================================ */
+
+const _cselMap = {};
+
+function _cselOptHTML(value, text, opts) {
+  if (opts.isStatus) {
+    if (value === 'recibido') return `<span class="badge badge-received">✓ Recibido</span>`;
+    if (value === 'pendiente') return `<span class="badge badge-pending">⏳ Pendiente</span>`;
+    return `<span class="csel-text">${text}</span>`;
+  }
+  if (opts.isCategory) {
+    const color = state.categories.find((c) => c.name === value)?.color;
+    if (color) return `<span class="csel-dot" style="background:${color}"></span><span class="csel-text">${text}</span>`;
+  }
+  return `<span class="csel-text">${text}</span>`;
+}
+
+function _buildCsel(id, opts = {}) {
+  const native = $(id);
+  if (!native) return;
+
+  // Wrap only once — if wrapper already exists, just refresh
+  if (_cselMap[id]) { _refreshCsel(id); return; }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'csel';
+  native.parentNode.insertBefore(wrap, native);
+  wrap.appendChild(native);
+  native.classList.add('csel-native');
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'csel-trigger';
+  wrap.appendChild(trigger);
+
+  const list = document.createElement('div');
+  list.className = 'csel-list';
+  wrap.appendChild(list);
+
+  _cselMap[id] = { native, trigger, list, opts };
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = list.classList.contains('open');
+    _closeAllCsels();
+    if (!isOpen) { list.classList.add('open'); trigger.classList.add('open'); }
+  });
+
+  _refreshCsel(id);
+}
+
+function _refreshCsel(id) {
+  const cs = _cselMap[id];
+  if (!cs) return;
+  const { native, trigger, list, opts } = cs;
+
+  // Rebuild option list
+  list.innerHTML = '';
+  Array.from(native.options).forEach((opt) => {
+    const item = document.createElement('div');
+    item.className = 'csel-item' + (opt.value === native.value ? ' selected' : '');
+    item.innerHTML = _cselOptHTML(opt.value, opt.text, opts);
+    item.addEventListener('click', () => {
+      native.value = opt.value;
+      native.dispatchEvent(new Event('change', { bubbles: true }));
+      _closeAllCsels();
+      _refreshCsel(id);
+    });
+    list.appendChild(item);
+  });
+
+  // Update trigger face
+  const sel = native.options[native.selectedIndex];
+  const chevron = `<svg class="csel-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`;
+  if (sel) {
+    trigger.innerHTML = _cselOptHTML(sel.value, sel.text, opts) + chevron;
+  } else {
+    trigger.innerHTML = `<span class="csel-placeholder">Seleccionar...</span>${chevron}`;
+  }
+}
+
+function _closeAllCsels() {
+  Object.values(_cselMap).forEach(({ list, trigger }) => {
+    list.classList.remove('open');
+    trigger.classList.remove('open');
+  });
+}
+
+function refreshAllCsels() {
+  Object.keys(_cselMap).forEach(_refreshCsel);
+}
+
+function initCustomSelects() {
+  _buildCsel('source-status',    { isStatus: true });
+  _buildCsel('expense-source',   {});
+  _buildCsel('expense-category', { isCategory: true });
+  _buildCsel('filter-source',    {});
+  _buildCsel('filter-category',  { isCategory: true });
+}
+
+document.addEventListener('click', _closeAllCsels);
+
+/* ============================================================
+   EXPENSE BUDGET INFO
+   ============================================================ */
+
+function updateExpenseBudgetInfo() {
+  const sourceId = $('expense-source').value;
+  const category = $('expense-category').value;
+  const el       = $('expense-budget-info');
+  if (!el) return;
+
+  if (!sourceId) { el.style.display = 'none'; return; }
+
+  const source = state.sources.find((s) => s.id === sourceId);
+  if (!source) { el.style.display = 'none'; return; }
+
+  const t = sourceTotals(source);
+  const statusBadge = source.status === 'recibido'
+    ? `<span class="badge badge-received" style="font-size:.7rem">✓ Recibido</span>`
+    : `<span class="badge badge-pending" style="font-size:.7rem">⏳ Pendiente</span>`;
+
+  let html = `<div class="ebi-row">
+    <div class="ebi-source-name">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <b>${source.name}</b> ${statusBadge}
+    </div>
+    <div class="ebi-stats">
+      <span>Total <b>${money(source.amount)}</b></span>
+      <span>Asignado <b>${money(t.assigned)}</b></span>
+      <span style="color:${t.available < 0 ? 'var(--danger)' : 'var(--success)'}">Disponible <b>${money(t.available)}</b></span>
+    </div>
+  </div>`;
+
+  if (category) {
+    const assigned  = Number(source.distribution?.[category] || 0);
+    const spent     = state.expenses
+      .filter((e) => e.sourceId === sourceId && e.category === category)
+      .reduce((a, b) => a + Number(b.amount), 0);
+    const available = assigned - spent;
+    const catColor  = state.categories.find((c) => c.name === category)?.color || '#888';
+
+    html += `<div class="ebi-divider"></div>
+    <div class="ebi-row">
+      <div class="ebi-source-name">
+        <span class="csel-dot" style="background:${catColor}"></span>
+        <b>${category}</b>
+      </div>
+      <div class="ebi-stats">
+        <span>Asignado <b>${money(assigned)}</b></span>
+        <span style="color:var(--danger)">Gastado <b>${money(spent)}</b></span>
+        <span style="color:${available < 0 ? 'var(--danger)' : 'var(--success)'}">Disponible <b>${money(available)}</b></span>
+      </div>
+    </div>`;
+  }
+
+  el.innerHTML = html;
+  el.style.display = '';
+}
+
+$('expense-source').addEventListener('change', updateExpenseBudgetInfo);
+$('expense-category').addEventListener('change', updateExpenseBudgetInfo);
 
 /* ============================================================
    RENDER ALL / PER TAB
@@ -645,22 +816,29 @@ function renderAll() {
    CALCULATOR
    ============================================================ */
 
-const calcState = { expr: '', result: '0', justEvaled: false };
+const calcState = { expr: '', result: '0', justEvaled: false, histExpr: '' };
+const CALC_OPS  = ['+', '−', '×', '÷'];
 
 function calcRender() {
-  $('calc-expr').textContent    = calcState.expr;
+  // Show the evaluated expression (e.g. "8+10 =") in the small line after hitting =
+  $('calc-expr').textContent    = calcState.justEvaled ? calcState.histExpr : '';
   $('calc-display').textContent = calcState.result;
 }
 
 function calcInput(val) {
-  if (calcState.justEvaled && !'+-×÷'.includes(val)) {
-    calcState.expr = ''; calcState.result = '0';
+  if (calcState.justEvaled) {
+    if (!CALC_OPS.includes(val)) {
+      // Digit/dot after eval → start fresh
+      calcState.expr = '';
+      calcState.result = '0';
+      calcState.histExpr = '';
+    }
+    // Operator after eval → continue from result (expr is already the result string)
   }
   calcState.justEvaled = false;
-  const ops = ['+', '−', '×', '÷'];
   const lastChar = calcState.expr.slice(-1);
-  if (ops.includes(val) && ops.includes(lastChar)) return; // no double ops
-  if (val === '.' && /[0-9]*\.[0-9]*$/.test(calcState.expr.split(/[+\-×÷]/).pop())) return;
+  if (CALC_OPS.includes(val) && CALC_OPS.includes(lastChar)) return; // no double ops
+  if (val === '.' && /[0-9]*\.[0-9]*$/.test(calcState.expr.split(/[+\-×÷−]/).pop())) return;
   calcState.expr += val;
   calcState.result = calcState.expr || '0';
   calcRender();
@@ -673,15 +851,21 @@ function calcEval() {
       .replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
     // eslint-disable-next-line no-new-func
     const r = Function('"use strict";return (' + safe + ')')();
-    if (!isFinite(r)) { calcState.result = 'Error'; calcState.expr = ''; }
-    else {
-      calcState.expr   = calcState.result;
-      calcState.result = +parseFloat(r.toFixed(10)) + '';
+    if (!isFinite(r)) {
+      calcState.result  = 'Error';
+      calcState.expr    = '';
+      calcState.histExpr = '';
+    } else {
+      const resultStr       = String(+parseFloat(r.toFixed(10)));
+      calcState.histExpr    = calcState.expr + ' =';  // save what we evaluated
+      calcState.result      = resultStr;
+      calcState.expr        = resultStr;              // KEY FIX: expr = numeric result
     }
     calcState.justEvaled = true;
   } catch {
-    calcState.result = 'Error';
-    calcState.expr   = '';
+    calcState.result   = 'Error';
+    calcState.expr     = '';
+    calcState.histExpr = '';
   }
   calcRender();
 }
@@ -691,27 +875,32 @@ function calcPercent() {
     const safe = calcState.expr.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-');
     // eslint-disable-next-line no-new-func
     const r = Function('"use strict";return (' + safe + ')')();
-    calcState.result = +parseFloat((r / 100).toFixed(10)) + '';
-    calcState.expr   = calcState.result;
+    const resultStr   = String(+parseFloat((r / 100).toFixed(10)));
+    calcState.histExpr = calcState.expr + ' % =';
+    calcState.result  = resultStr;
+    calcState.expr    = resultStr;
     calcState.justEvaled = true;
   } catch { /* ignore */ }
   calcRender();
 }
 
-// FAB toggle
+// FAB toggle — hide FAB when panel is open
 $('calc-fab').addEventListener('click', () => {
   const panel = $('calc-panel');
   const open  = panel.style.display !== 'none';
   panel.style.display = open ? 'none' : '';
+  $('calc-fab').style.display = open ? '' : 'none';
   if (!open) {
-    // re-trigger animation
     panel.style.animation = 'none';
     requestAnimationFrame(() => { panel.style.animation = ''; });
     calcRender();
   }
 });
 
-$('calc-close').addEventListener('click', () => { $('calc-panel').style.display = 'none'; });
+$('calc-close').addEventListener('click', () => {
+  $('calc-panel').style.display = 'none';
+  $('calc-fab').style.display = '';
+});
 
 // Calculator button delegation
 $('calc-panel').addEventListener('click', (e) => {
@@ -719,10 +908,20 @@ $('calc-panel').addEventListener('click', (e) => {
   if (!btn) return;
   const action = btn.dataset.action;
   const val    = btn.dataset.val;
-  if (action === 'clear')     { calcState.expr = ''; calcState.result = '0'; calcState.justEvaled = false; calcRender(); }
+  if (action === 'clear') {
+    calcState.expr = ''; calcState.result = '0';
+    calcState.justEvaled = false; calcState.histExpr = '';
+    calcRender();
+  }
   else if (action === 'backspace') {
-    calcState.expr   = calcState.expr.slice(0, -1);
-    calcState.result = calcState.expr || '0';
+    if (calcState.justEvaled) {
+      // backspace after eval → clear entirely
+      calcState.expr = ''; calcState.result = '0';
+      calcState.justEvaled = false; calcState.histExpr = '';
+    } else {
+      calcState.expr   = calcState.expr.slice(0, -1);
+      calcState.result = calcState.expr || '0';
+    }
     calcRender();
   }
   else if (action === 'equals') calcEval();
@@ -740,8 +939,15 @@ document.addEventListener('keydown', (e) => {
   if (!k) return;
   e.preventDefault();
   if (k === '=')    calcEval();
-  else if (k === 'back') { calcState.expr = calcState.expr.slice(0,-1); calcState.result = calcState.expr||'0'; calcRender(); }
-  else if (k === 'esc') $('calc-panel').style.display = 'none';
+  else if (k === 'back') {
+    if (calcState.justEvaled) {
+      calcState.expr = ''; calcState.result = '0'; calcState.justEvaled = false; calcState.histExpr = '';
+    } else {
+      calcState.expr = calcState.expr.slice(0,-1); calcState.result = calcState.expr||'0';
+    }
+    calcRender();
+  }
+  else if (k === 'esc') { $('calc-panel').style.display = 'none'; $('calc-fab').style.display = ''; }
   else if (k === '%') calcPercent();
   else calcInput(k);
 });
@@ -822,5 +1028,6 @@ function renderCatSummary() {
   $('source-date').valueAsDate = new Date();
   applyTheme();
   renderAll();
+  initCustomSelects();
   switchTab('dashboard');
 })();
