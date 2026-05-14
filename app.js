@@ -72,8 +72,8 @@ function setupRealtime() {
     }, (payload) => {
       const remote = payload.new?.data;
       if (!remote) return;
-      // Evitar pisarse a uno mismo: comparar timestamps
-      if (remote._savedAt && remote._savedAt === state._savedAt) return;
+      // Ignorar si el update lo generó este mismo dispositivo
+      if (remote._deviceId === _deviceId) return;
       Object.assign(state, remote, { editingSourceId: state.editingSourceId });
       localStorage.setItem('budget_state', JSON.stringify(state));
       renderOnly();
@@ -93,13 +93,16 @@ const money = (n) => `₡${Number(n || 0).toLocaleString('es-CR', { maximumFract
 const uid   = () => Math.random().toString(36).slice(2, 10);
 const fmt   = (iso) => { if (!iso) return '—'; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
 
+// ID único por pestaña/dispositivo — se regenera con cada recarga
+const _deviceId = Math.random().toString(36).slice(2, 8);
+
 /** Guarda en localStorage (inmediato) y en Supabase (async, sin bloquear). */
 function save() {
-  state._savedAt = Date.now();
   localStorage.setItem('budget_state', JSON.stringify(state));
   if (!db) return;
+  const payload = { ...state, _deviceId };
   db.from('budget_state')
-    .update({ data: state, updated_at: new Date().toISOString() })
+    .update({ data: payload, updated_at: new Date().toISOString() })
     .eq('id', STATE_ROW_ID)
     .then(({ error }) => {
       if (error) console.error('BudgetFlow: error al sincronizar con Supabase:', error);
