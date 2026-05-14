@@ -120,7 +120,6 @@ function save() {
 
 const DEVICE_KEY = localStorage.getItem('budget_device_key') || uid();
 localStorage.setItem('budget_device_key', DEVICE_KEY);
-const ALLOWED_ROTATION_DAYS = [15, 30, 60, 90, 180];
 /* ============================================================
 SECURITY UTILITIES — Reemplaza las funciones existentes
 ============================================================ */
