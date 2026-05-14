@@ -9,6 +9,7 @@
 const SUPABASE_URL = 'https://jljdudxbggewxvqmxlvj.supabase.co'; 
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsamR1ZHhiZ2dld3h2cW14bHZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MDMwNjYsImV4cCI6MjA5NDI3OTA2Nn0.eJAmo8cxkOr5em89domd0NWimI17TUAfaUH0Xo4Pncc';
 const STATE_ROW_ID = 'default';
+window.STATE_ROW_ID = STATE_ROW_ID;
 
 /* ============================================================
    STATE
@@ -36,6 +37,7 @@ if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
 
 const _supabaseReady = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_KEY !== 'YOUR_SUPABASE_ANON_KEY';
 const db = _supabaseReady ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+window.db = db;
 
 /** Carga el estado desde Supabase. Retorna true si tuvo éxito. */
 async function loadFromSupabase() {
