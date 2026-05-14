@@ -124,11 +124,14 @@
       <!-- ===== SOURCES TAB ===== -->
       <section class="tab-panel" id="tab-sources">
         <div class="page-header">
-          <h1>Fuentes de ingreso</h1>
-          <p class="muted">Administra tus fuentes y su distribución</p>
+          <div>
+            <h1>Fuentes de ingreso</h1>
+            <p class="muted">Administra tus fuentes y su distribución</p>
+          </div>
+          <button type="button" class="icon-btn quick-add-btn" id="toggle-source-form" title="Agregar fuente">+</button>
         </div>
 
-        <div class="card">
+        <div class="card collapsible-card" id="source-form-card" style="display:none">
           <div class="card-header">
             <h3 id="source-form-title">Nueva fuente</h3>
           </div>
@@ -165,11 +168,14 @@
       <!-- ===== CATEGORIES TAB ===== -->
       <section class="tab-panel" id="tab-categories">
         <div class="page-header">
-          <h1>Categorías</h1>
-          <p class="muted">Vista consolidada de todas las categorías</p>
+          <div>
+            <h1>Categorías</h1>
+            <p class="muted">Vista consolidada de todas las categorías</p>
+          </div>
+          <button type="button" class="icon-btn quick-add-btn" id="toggle-category-form" title="Agregar categoría">+</button>
         </div>
 
-        <div class="card">
+        <div class="card collapsible-card" id="category-form-card" style="display:none">
           <div class="card-header">
             <h3>Nueva categoría</h3>
           </div>
@@ -195,11 +201,14 @@
       <!-- ===== EXPENSES TAB ===== -->
       <section class="tab-panel" id="tab-expenses">
         <div class="page-header">
-          <h1>Gastos</h1>
-          <p class="muted">Registra y revisa tus gastos</p>
+          <div>
+            <h1>Gastos</h1>
+            <p class="muted">Registra y revisa tus gastos</p>
+          </div>
+          <button type="button" class="icon-btn quick-add-btn" id="toggle-expense-form" title="Registrar gasto">+</button>
         </div>
 
-        <div class="card">
+        <div class="card collapsible-card" id="expense-form-card" style="display:none">
           <div class="card-header">
             <h3>Registrar gasto</h3>
           </div>
