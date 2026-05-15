@@ -912,7 +912,12 @@ details[open] > summary::before { transform: rotate(90deg); }
   width: 100%;
   max-width: 480px;
   box-shadow: var(--shadow-md);
-  overflow: hidden;
+  max-height: calc(100dvh - 2rem);
+  overflow: visible;
+}
+
+#modal-content {
+  overflow-y: auto;
 }
 
 /* ============================================================
