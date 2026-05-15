@@ -1268,11 +1268,11 @@ function renderCatSummary() {
 
 function _startApp() {
   // Botones de seguridad — sidebar y mobile
-  function openSecurityModal() {
+  async function openSecurityModal() {
     const overlay = document.getElementById('security-modal-overlay');
     const body    = document.getElementById('security-modal-body');
     if (!overlay || !body) return;
-    body.innerHTML = Auth.renderSettingsPanel();
+    body.innerHTML = await Auth.renderSettingsPanel();
     Auth.bindSettingsEvents();
     overlay.style.display = 'flex';
   }
