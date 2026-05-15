@@ -1,618 +1,1785 @@
-'use strict';
-
 /* ============================================================
-   BUDGETFLOW — AUTH MODULE  (Supabase edition)
-   
-   La configuración de la contraseña (hash, expiración) se
-   guarda en Supabase → tabla budget_state, campo auth_cfg.
-   Así es la misma en todos los dispositivos.
-
-   La sesión "Recordarme" sigue siendo local (localStorage)
-   porque es intencional: cada dispositivo decide si recordar.
-
-   Seguridad:
-   - La contraseña se hashea con SHA-256 (Web Crypto API).
-   - NUNCA se guarda la contraseña en texto plano.
-   - El token de sesión local se deriva del hash+createdAt
-     guardado en Supabase, por lo que cambiar la contraseña
-     invalida todas las sesiones guardadas automáticamente.
+   BUDGET FLOW — Design System (shadcn/ui inspired)
    ============================================================ */
 
-const SESSION_KEY = 'bf_auth_ses';   // Solo la sesión es local
-
-/* ---- Helpers ---- */
-async function sha256(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+:root {
+  --bg:          #fafafa;
+  --bg-alt:      #f4f4f5;
+  --card:        #ffffff;
+  --border:      #e4e4e7;
+  --border-focus:#a1a1aa;
+  --text:        #09090b;
+  --text-2:      #52525b;
+  --text-3:      #a1a1aa;
+  --accent:      #18181b;
+  --accent-fg:   #fafafa;
+  --accent-muted:#3f3f46;
+  --primary:     #2563eb;
+  --primary-fg:  #ffffff;
+  --primary-muted:#dbeafe;
+  --danger:      #ef4444;
+  --success:     #22c55e;
+  --warn:        #f59e0b;
+  --sidebar-w:   220px;
+  --radius:      8px;
+  --radius-lg:   12px;
+  --shadow:      0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:   0 4px 12px rgba(0,0,0,.08);
 }
 
-function now()      { return Date.now(); }
-function daysMs(d)  { return d * 86_400_000; }
+html[data-theme="dark"] {
+  --bg:          #09090b;
+  --bg-alt:      #111113;
+  --card:        #18181b;
+  --border:      #27272a;
+  --border-focus:#52525b;
+  --text:        #fafafa;
+  --text-2:      #a1a1aa;
+  --text-3:      #52525b;
+  --accent:      #fafafa;
+  --accent-fg:   #09090b;
+  --accent-muted:#a1a1aa;
+  --primary:     #3b82f6;
+  --primary-fg:  #ffffff;
+  --primary-muted:#1e3a5f;
+  --danger:      #f87171;
+  --success:     #4ade80;
+  --warn:        #fbbf24;
+  --shadow:      0 1px 3px rgba(0,0,0,.4);
+  --shadow-md:   0 4px 16px rgba(0,0,0,.5);
+}
 
-/* ---- Supabase: leer y escribir auth_cfg ---- */
+/* ---- Reset ---- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: 'Geist', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  transition: background .2s, color .2s;
+}
+/* Evita zoom por doble tap en controles táctiles */
+button, a, input, select, label, summary, [role="button"] {
+  touch-action: manipulation;
+}
+button { cursor: pointer; font-family: inherit; }
+input, select, button { font-size: .875rem; }
+a { color: inherit; text-decoration: none; }
 
-/**
- * Lee auth_cfg desde Supabase.
- * Retorna el objeto { hash, createdAt, expiresAt, durationDays } o null.
- * Usa la instancia `db` y la constante `STATE_ROW_ID` definidas en app.js.
- */
-async function _getAuthCfg() {
-  if (!window.db) return null;
-  try {
-    const { data, error } = await window.db
-      .from('budget_state')
-      .select('auth_cfg')
-      .eq('id', window.STATE_ROW_ID)
-      .single();
-    if (error || !data) return null;
-    return data.auth_cfg || null;
-  } catch {
-    return null;
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+
+.sidebar {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  transition: background .2s;
+}
+
+.sidebar-header {
+  padding: 1.25rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-weight: 700;
+  font-size: .95rem;
+  letter-spacing: -.02em;
+  color: var(--text);
+}
+
+.logo svg { flex-shrink: 0; }
+
+.sidebar-nav {
+  flex: 1;
+  padding: .75rem .625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+  width: 100%;
+  padding: .5rem .75rem;
+  border-radius: var(--radius);
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: .875rem;
+  font-weight: 500;
+  text-align: left;
+  transition: background .15s, color .15s;
+}
+
+.nav-item:hover {
+  background: var(--bg-alt);
+  color: var(--text);
+}
+
+.nav-item.active {
+  background: var(--bg-alt);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  padding: 1rem .625rem;
+  border-top: 1px solid var(--border);
+}
+
+.theme-btn {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+  padding: .5rem .75rem;
+  border-radius: var(--radius);
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: .8rem;
+  font-weight: 500;
+  transition: background .15s;
+}
+
+.theme-btn:hover { background: var(--bg-alt); color: var(--text); }
+
+.app-shell {
+  margin-left: var(--sidebar-w);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  flex: 1;
+  padding: 2rem;
+  max-width: 1080px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.topbar { display: none; }
+.bottom-nav { display: none; }
+
+/* ============================================================
+   PAGE HEADER
+   ============================================================ */
+
+.page-header {
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.page-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 1.2;
+}
+
+.page-header .muted {
+  font-size: .875rem;
+  color: var(--text-2);
+  margin-top: .25rem;
+}
+
+.quick-add-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 1.2rem;
+  font-weight: 600;
+  background: var(--card);
+}
+
+/* ============================================================
+   TAB PANELS
+   ============================================================ */
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; animation: fadeIn .2s ease; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  margin-bottom: 1rem;
+  overflow: visible;
+  transition: background .2s, border .2s;
+}
+
+.collapsible-card {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity .22s ease, transform .22s ease;
+}
+
+.collapsible-card.is-open {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.card-header h3 {
+  font-size: .875rem;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.card-body { padding: 1.25rem; }
+
+/* ============================================================
+   KPI CARDS
+   ============================================================ */
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .75rem;
+  margin-bottom: 1rem;
+}
+
+.kpi-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.125rem 1.25rem;
+  box-shadow: var(--shadow);
+  transition: box-shadow .2s;
+}
+
+.kpi-card:hover { box-shadow: var(--shadow-md); }
+
+.kpi-label {
+  font-size: .75rem;
+  font-weight: 500;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: .35rem;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+
+.kpi-label svg { opacity: .5; }
+
+.kpi-value {
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -.03em;
+  color: var(--text);
+}
+
+.kpi-sub {
+  font-size: .75rem;
+  color: var(--text-3);
+  margin-top: .2rem;
+}
+
+/* ============================================================
+   CHARTS
+   ============================================================ */
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: .75rem;
+  margin-bottom: 1rem;
+}
+
+.chart-wrap {
+  padding: 1rem 1.25rem;
+  max-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ============================================================
+   FORMS
+   ============================================================ */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: .75rem;
+  padding: 1.25rem;
+}
+
+.form-row {
+  display: flex;
+  gap: .75rem;
+  padding: 1.25rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+.field label {
+  font-size: .75rem;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: .01em;
+}
+
+input, select {
+  width: 100%;
+  padding: .5rem .75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: .875rem;
+  transition: border .15s, box-shadow .15s;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right .6rem center;
+  padding-right: 2rem;
+}
+
+input:focus, select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+
+input::placeholder { color: var(--text-3); }
+
+.color-field input[type="color"] {
+  height: 38px;
+  padding: .25rem;
+  cursor: pointer;
+  width: 56px;
+}
+
+.form-actions {
+  justify-content: flex-end;
+  align-self: flex-end;
+  flex-direction: row;
+  gap: .5rem;
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem 1rem;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: .875rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: opacity .15s, background .15s;
+}
+
+.btn-primary:hover { opacity: .85; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .5rem .875rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  font-size: .875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+
+.btn-ghost:hover { background: var(--bg-alt); color: var(--text); }
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .4rem .75rem;
+  border-radius: var(--radius);
+  border: none;
+  background: transparent;
+  color: var(--danger);
+  font-size: .8rem;
+  font-weight: 500;
+  transition: background .15s;
+}
+
+.btn-danger:hover { background: rgba(239,68,68,.08); }
+
+.btn-link {
+  font-size: .8rem;
+  color: var(--text-2);
+  background: none;
+  border: none;
+  font-weight: 500;
+  transition: color .15s;
+}
+
+.btn-link:hover { color: var(--text); }
+
+.icon-btn {
+  width: 36px; height: 36px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s;
+}
+
+.icon-btn:hover { background: var(--bg-alt); }
+
+/* ============================================================
+   SOURCE CARDS
+   ============================================================ */
+
+.source-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: .75rem;
+  background: var(--card);
+  transition: box-shadow .2s;
+}
+
+.source-card:hover { box-shadow: var(--shadow-md); }
+
+.source-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .875rem 1.125rem;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.source-name { font-weight: 600; font-size: .9rem; }
+
+.source-meta {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+.badge-pending   { background: rgba(245,158,11,.12); color: var(--warn); }
+.badge-received  { background: rgba(34,197,94,.12); color: var(--success); }
+
+.source-actions { display: flex; gap: .35rem; }
+
+.source-body { padding: 0 1.125rem .875rem; }
+
+.source-stats {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: .75rem;
+  flex-wrap: wrap;
+}
+
+.stat { display: flex; flex-direction: column; gap: .1rem; }
+.stat-label { font-size: .7rem; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+.stat-value { font-size: .9rem; font-weight: 600; }
+
+.progress-bar {
+  height: 6px;
+  background: var(--bg-alt);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: .875rem;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 999px;
+  transition: width .4s ease;
+}
+
+.dist-form {
+  display: flex;
+  gap: .5rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.dist-form select, .dist-form input {
+  flex: 1;
+  min-width: 120px;
+}
+
+.dist-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-top: .6rem;
+}
+
+.dist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .22rem .6rem;
+  border-radius: 6px;
+  font-size: .78rem;
+  font-weight: 500;
+  background: var(--bg-alt);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+
+.dist-chip .dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   CATEGORY CARDS
+   ============================================================ */
+
+.category-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: .75rem;
+  background: var(--card);
+  transition: box-shadow .2s;
+}
+
+.category-card:hover { box-shadow: var(--shadow-md); }
+
+.category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .875rem 1.125rem .5rem;
+  gap: .75rem;
+}
+
+.category-title {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-weight: 600;
+  font-size: .9rem;
+}
+
+.cat-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.category-amounts {
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.category-amounts .spent { color: var(--danger); }
+.category-amounts .sep { color: var(--text-3); margin: 0 .2rem; }
+
+.category-body { padding: .25rem 1.125rem .875rem; }
+
+.cat-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: .6rem;
+}
+
+.cat-pct {
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+details > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: .78rem;
+  color: var(--text-2);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .3rem 0;
+  user-select: none;
+}
+
+details > summary::-webkit-details-marker { display: none; }
+
+details > summary::before {
+  content: '▶';
+  font-size: .65rem;
+  transition: transform .2s;
+}
+
+details[open] > summary::before { transform: rotate(90deg); }
+
+.source-breakdown {
+  margin-top: .5rem;
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+
+.breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: .8rem;
+  padding: .3rem .5rem;
+  border-radius: 6px;
+  background: var(--bg-alt);
+}
+
+.breakdown-row .src-name { color: var(--text-2); }
+.breakdown-row .src-vals { display: flex; gap: .75rem; }
+.breakdown-row .src-vals span { color: var(--text-3); }
+.breakdown-row .src-vals b { color: var(--text); }
+.btn-reassign {
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ============================================================
+   EXPENSE LIST
+   ============================================================ */
+
+.expense-table-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
+  padding: .5rem 1.25rem;
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.expense-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
+  padding: .75rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+  transition: background .1s;
+  gap: .5rem;
+}
+
+.expense-row:last-child { border-bottom: none; }
+.expense-row:hover { background: var(--bg-alt); }
+
+.exp-desc { font-size: .875rem; font-weight: 500; }
+.exp-sub  { font-size: .72rem; color: var(--text-3); margin-top: .1rem; }
+.exp-amount { font-size: .875rem; font-weight: 700; color: var(--danger); }
+.exp-tag  {
+  display: inline-flex; align-items: center; gap: .3rem;
+  font-size: .75rem; font-weight: 500;
+  padding: .2rem .55rem; border-radius: 6px;
+  background: var(--bg-alt); color: var(--text-2);
+}
+.exp-date { font-size: .78rem; color: var(--text-3); }
+
+.expense-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .45rem;
+}
+
+.expense-action-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text-2);
+  font-size: .74rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: .26rem .62rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.expense-action-btn:hover {
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-alt));
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  color: var(--text);
+}
+
+.expense-action-btn.danger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-alt));
+  border-color: color-mix(in srgb, var(--danger) 26%, var(--border));
+  color: var(--danger);
+}
+
+/* ============================================================
+   CHIPS
+   ============================================================ */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  padding: .75rem 1.25rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .28rem .65rem;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: .01em;
+}
+
+/* ============================================================
+   RECENT EXPENSES (dashboard)
+   ============================================================ */
+
+.recent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .7rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  gap: 1rem;
+}
+
+.recent-row:last-child { border-bottom: none; }
+.recent-row:hover { background: var(--bg-alt); }
+
+.recent-left { display: flex; flex-direction: column; gap: .1rem; }
+.recent-desc { font-size: .875rem; font-weight: 500; }
+.recent-meta { font-size: .75rem; color: var(--text-3); }
+.recent-amount { font-size: .9rem; font-weight: 700; color: var(--danger); white-space: nowrap; }
+
+/* ============================================================
+   EMPTY STATES
+   ============================================================ */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 1rem;
+  gap: .5rem;
+  color: var(--text-3);
+}
+
+.empty-state svg { opacity: .3; margin-bottom: .5rem; }
+.empty-state p { font-size: .875rem; font-weight: 500; }
+.empty-state span { font-size: .8rem; }
+
+/* ============================================================
+   FILTERS
+   ============================================================ */
+
+.filters {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+
+.filters select {
+  width: auto;
+  padding: .35rem .65rem;
+  font-size: .8rem;
+}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+
+.toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: var(--text);
+  color: var(--bg);
+  padding: .6rem 1rem;
+  border-radius: var(--radius);
+  font-size: .85rem;
+  font-weight: 500;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: all .25s;
+  z-index: 9999;
+  max-width: 280px;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ============================================================
+   MODAL
+   ============================================================ */
+
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: fadeIn .15s ease;
+}
+
+.modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 480px;
+  box-shadow: var(--shadow-md);
+  max-height: calc(100dvh - 2rem);
+  overflow: visible;
+}
+
+#modal-content {
+  overflow-y: auto;
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+/* ============================================================
+   CUSTOM SELECT
+   ============================================================ */
+
+.csel {
+  position: relative;
+  width: 100%;
+}
+
+/* Hide the native select (keep it in DOM for .value reads) */
+.csel-native {
+  position: absolute !important;
+  width: 1px !important; height: 1px !important;
+  opacity: 0 !important; pointer-events: none !important;
+}
+
+.csel-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .5rem .75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: .875rem;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border .15s, box-shadow .15s;
+  min-height: 38px;
+}
+
+.csel-trigger:focus,
+.csel-trigger.open {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+  outline: none;
+}
+
+.csel-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-3);
+  transition: transform .18s;
+}
+
+.csel-trigger.open .csel-chevron { transform: rotate(180deg); }
+
+.csel-placeholder { color: var(--text-3); }
+
+.csel-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.csel-text { flex: 1; }
+
+.csel-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  z-index: 600;
+  max-height: 240px;
+  overflow-y: auto;
+  display: none;
+  padding: .35rem;
+}
+
+.csel-list.open { display: block; animation: calcPop .15s cubic-bezier(.34,1.4,.64,1); }
+
+.csel-item {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .45rem .65rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: .875rem;
+  color: var(--text);
+  transition: background .1s;
+}
+
+.csel-item:hover    { background: var(--bg-alt); }
+.csel-item.selected { background: var(--primary-muted); color: var(--primary); font-weight: 600; }
+
+/* Filters bar — compact custom selects */
+.filters .csel { width: auto; min-width: 150px; }
+.filters .csel-trigger {
+  padding: .32rem .6rem;
+  font-size: .8rem;
+  min-height: 32px;
+}
+
+/* ============================================================
+   EXPENSE BUDGET INFO
+   ============================================================ */
+
+.expense-budget-info {
+  grid-column: 1 / -1;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: .75rem 1rem;
+  font-size: .82rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.ebi-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .4rem .75rem;
+}
+
+.ebi-source-name {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .83rem;
+  color: var(--text);
+}
+
+.ebi-stats {
+  display: flex;
+  gap: .75rem;
+  flex-wrap: wrap;
+  font-size: .78rem;
+  color: var(--text-2);
+}
+
+.ebi-stats b { color: var(--text); font-weight: 600; }
+
+.ebi-divider {
+  height: 1px;
+  background: var(--border);
+  margin: .1rem 0;
+}
+
+/* ============================================================
+   CATEGORY SUMMARY (dashboard)
+   ============================================================ */
+
+.cat-summary-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 90px 90px 90px;
+  align-items: center;
+  gap: .75rem;
+  padding: .7rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  transition: background .1s;
+}
+
+.cat-summary-row:last-child { border-bottom: none; }
+.cat-summary-row:hover { background: var(--bg-alt); }
+
+.cat-sum-name {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .875rem;
+  font-weight: 600;
+}
+
+.cat-sum-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.cat-sum-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-alt);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.cat-sum-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width .4s ease;
+}
+
+.cat-sum-pct {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--text-3);
+  min-width: 30px;
+  text-align: right;
+}
+
+.cat-sum-col {
+  text-align: right;
+  font-size: .8rem;
+}
+
+.cat-sum-col .label { font-size: .68rem; color: var(--text-3); font-weight: 500; margin-bottom: .1rem; }
+.cat-sum-col .val   { font-weight: 600; color: var(--text); }
+.cat-sum-col .val.spent { color: var(--danger); }
+.cat-sum-col .val.remaining { color: var(--success); }
+.cat-sum-col .val.over { color: var(--danger); }
+
+.cat-summary-header {
+  display: grid;
+  grid-template-columns: 180px 1fr 90px 90px 90px;
+  gap: .75rem;
+  padding: .5rem 1.25rem;
+  font-size: .68rem;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.badge-count {
+  font-size: .72rem;
+  font-weight: 600;
+  background: var(--bg-alt);
+  color: var(--text-2);
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+/* ============================================================
+   CALCULATOR FAB
+   ============================================================ */
+
+.calc-fab {
+  position: fixed;
+  bottom: 1.75rem;
+  right: 1.75rem;
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(0,0,0,.22);
+  z-index: 500;
+  transition: transform .18s, box-shadow .18s, background .15s;
+}
+
+.calc-fab:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 20px rgba(0,0,0,.28);
+}
+
+.calc-fab:active { transform: scale(.96); }
+
+/* ============================================================
+   CALCULATOR PANEL
+   ============================================================ */
+
+.calc-panel {
+  position: fixed;
+  bottom: 6rem;
+  right: 1.75rem;
+  width: 300px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.18);
+  z-index: 499;
+  overflow: hidden;
+  animation: calcPop .2s cubic-bezier(.34,1.56,.64,1);
+  transition: background .2s;
+}
+
+@keyframes calcPop {
+  from { opacity: 0; transform: scale(.9) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.calc-drag-handle {
+  width: 36px; height: 4px;
+  background: var(--border);
+  border-radius: 99px;
+  margin: .6rem auto .2rem;
+}
+
+.calc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .25rem .9rem .5rem;
+}
+
+.calc-title {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.calc-screen {
+  background: var(--bg-alt);
+  margin: 0 .75rem .6rem;
+  border-radius: 12px;
+  padding: .75rem 1rem;
+  min-height: 76px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: .2rem;
+  border: 1px solid var(--border);
+}
+
+.calc-expr {
+  font-size: .8rem;
+  color: var(--text-3);
+  min-height: 1.1rem;
+  word-break: break-all;
+  text-align: right;
+}
+
+.calc-display {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -.04em;
+  color: var(--text);
+  word-break: break-all;
+  text-align: right;
+  line-height: 1.1;
+}
+
+.calc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .4rem;
+  padding: 0 .75rem .75rem;
+}
+
+.calc-btn {
+  height: 58px;
+  border-radius: 12px;
+  border: none;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-family: 'Geist', system-ui, sans-serif;
+  cursor: pointer;
+  transition: opacity .1s, transform .1s, background .15s;
+  background: var(--bg-alt);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calc-btn:hover   { opacity: .8; }
+.calc-btn:active  { transform: scale(.93); }
+
+.calc-btn.span2   { grid-column: span 2; }
+
+.calc-btn.calc-op {
+  background: var(--primary-muted);
+  color: var(--primary);
+}
+
+.calc-btn.calc-fn {
+  background: var(--bg-alt);
+  color: var(--text-2);
+  font-size: .9rem;
+}
+
+.calc-btn.calc-eq {
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 1.2rem;
+}
+
+/* ============================================================
+   MOBILE — CALCULATOR
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .calc-fab {
+    bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px));
+    right: 1rem;
+    width: 46px;
+    height: 46px;
+    border-radius: 12px;
   }
-}
 
-/**
- * Guarda auth_cfg en Supabase.
- * Si cfg es null, borra la protección.
- */
-async function _setAuthCfg(cfg) {
-  if (!window.db) return;
-  await window.db
-    .from('budget_state')
-    .update({ auth_cfg: cfg })
-    .eq('id', window.STATE_ROW_ID);
-}
-
-/* ---- Sesión local (Recordarme, por dispositivo) ---- */
-function getSession()                       { try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch { return null; } }
-function setSession(token, expiresAt)       { localStorage.setItem(SESSION_KEY, JSON.stringify({ token, expiresAt })); }
-function clearSession()                     { localStorage.removeItem(SESSION_KEY); }
-
-/* ---- Public API ---- */
-const Auth = {
-
-  /** Cache en memoria para no consultar Supabase en cada operación de la misma sesión. */
-  _cfg: undefined,   // undefined = no cargado aún; null = sin contraseña; object = configuración
-
-  /** Carga (o devuelve desde cache) la configuración. */
-  async _loadCfg() {
-    if (Auth._cfg !== undefined) return Auth._cfg;
-    Auth._cfg = await _getAuthCfg();
-    return Auth._cfg;
-  },
-
-  /** Invalida el cache (tras cambiar/eliminar contraseña). */
-  _invalidateCfg() { Auth._cfg = undefined; },
-
-  /* ---- Estado ---- */
-
-  async isConfigured() {
-    const cfg = await Auth._loadCfg();
-    return !!cfg?.hash;
-  },
-
-  async isExpired() {
-    const cfg = await Auth._loadCfg();
-    if (!cfg?.expiresAt) return false;
-    return now() > cfg.expiresAt;
-  },
-
-  async expiresInDays() {
-    const cfg = await Auth._loadCfg();
-    if (!cfg?.expiresAt) return Infinity;
-    return Math.ceil((cfg.expiresAt - now()) / daysMs(1));
-  },
-
-  async needsRenewalWarning() {
-    const d = await Auth.expiresInDays();
-    return d >= 0 && d <= 7;
-  },
-
-  async getDurationDays() {
-    const cfg = await Auth._loadCfg();
-    return cfg?.durationDays || 30;
-  },
-
-  /* ---- Sesión ---- */
-
-  /** ¿La sesión guardada en este dispositivo sigue siendo válida? */
-  async isSessionValid() {
-    const cfg = await Auth._loadCfg();
-    if (!cfg?.hash) return true;          // Sin contraseña → acceso libre
-    const ses = getSession();
-    if (!ses) return false;
-    if (now() > ses.expiresAt) { clearSession(); return false; }
-    const expected = await sha256(cfg.hash + cfg.createdAt);
-    return ses.token === expected;
-  },
-
-  /** Guarda una sesión "Recordarme" en este dispositivo. */
-  async createSession() {
-    const cfg = await Auth._loadCfg();
-    if (!cfg) return;
-    const token     = await sha256(cfg.hash + cfg.createdAt);
-    const expiresAt = cfg.expiresAt;
-    setSession(token, expiresAt);
-  },
-
-  /** Verifica la contraseña ingresada. */
-  async verify(plain) {
-    const cfg = await Auth._loadCfg();
-    if (!cfg?.hash) return true;
-    return (await sha256(plain)) === cfg.hash;
-  },
-
-  /** Crea o cambia la contraseña. Guarda en Supabase e invalida sesiones locales. */
-  async setPassword(plain, durationDays) {
-    const hash      = await sha256(plain);
-    const createdAt = now();
-    const expiresAt = createdAt + daysMs(durationDays);
-    const cfg       = { hash, createdAt, expiresAt, durationDays };
-    await _setAuthCfg(cfg);
-    Auth._cfg = cfg;           // Actualizar cache
-    clearSession();            // Forzar re-login en este dispositivo
-  },
-
-  /** Elimina la contraseña de todos los dispositivos. */
-  async removePassword() {
-    await _setAuthCfg(null);
-    Auth._cfg = null;
-    clearSession();
-  },
-
-  /** Cierra sesión en este dispositivo. */
-  logout() { clearSession(); Auth._cfg = undefined; Auth.showLock(); },
-
-  /* ================================================================
-     UI
-     ================================================================ */
-
-  /** Punto de entrada. Llama esto antes de mostrar la app. */
-  async init(onUnlocked) {
-    Auth._onUnlocked = onUnlocked;
-
-    const configured = await Auth.isConfigured();
-
-    if (!configured) {
-      Auth._showSetup();
-      return;
-    }
-
-    if (await Auth.isExpired()) {
-      Auth._showExpired();
-      return;
-    }
-
-    if (await Auth.isSessionValid()) {
-      Auth._unlock();
-      return;
-    }
-
-    Auth.showLock();
-  },
-
-  showLock() { Auth._renderOverlay('lock'); },
-
-  _unlock() {
-    const overlay = document.getElementById('auth-overlay');
-    if (overlay) {
-      overlay.classList.add('auth-fade-out');
-      setTimeout(() => overlay.remove(), 320);
-    }
-    if (Auth._onUnlocked) Auth._onUnlocked();
-    Auth.needsRenewalWarning().then(warn => {
-      if (warn) {
-        Auth.expiresInDays().then(d => {
-          setTimeout(() => {
-            if (window.toast) toast(`⚠️ Tu contraseña vence en ${d} día${d !== 1 ? 's' : ''}. Cámbiala en Ajustes.`, 5000);
-          }, 1200);
-        });
-      }
-    });
-  },
-
-  _showSetup()   { Auth._renderOverlay('setup');   },
-  _showExpired() { Auth._renderOverlay('expired'); },
-
-  /* ---- Overlay renderer ---- */
-  _renderOverlay(mode) {
-    document.getElementById('auth-overlay')?.remove();
-
-    const el      = document.createElement('div');
-    el.id         = 'auth-overlay';
-    el.className  = 'auth-overlay';
-
-    const DURATION_OPTIONS = [
-      { value: 15,  label: '15 días' },
-      { value: 30,  label: '30 días' },
-      { value: 60,  label: '2 meses' },
-      { value: 90,  label: '3 meses' },
-      { value: 180, label: '6 meses' },
-    ];
-
-    const durationSelect = `
-      <div class="auth-field">
-        <label class="auth-label">Vigencia de la contraseña</label>
-        <select class="auth-select" id="auth-duration">
-          ${DURATION_OPTIONS.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
-        </select>
-      </div>`;
-
-    const logo = `
-      <div class="auth-logo">
-        <svg width="36" height="36" viewBox="0 0 32 32" fill="none">
-          <rect width="32" height="32" rx="7" fill="#18181b"/>
-          <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle"
-            font-size="17" font-family="system-ui,sans-serif" fill="white">₡</text>
-        </svg>
-        <span class="auth-logo-name">BudgetFlow</span>
-      </div>`;
-
-    if (mode === 'lock') {
-      el.innerHTML = `
-        <div class="auth-card">
-          ${logo}
-          <div class="auth-heading">
-            <h2>Acceso protegido</h2>
-            <p class="auth-sub">Ingresa tu contraseña para continuar</p>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-pw" class="auth-input"
-                placeholder="••••••••" autocomplete="current-password" autofocus />
-              <button type="button" class="auth-eye" id="auth-eye" aria-label="Ver contraseña">
-                ${Auth._eyeIcon(false)}
-              </button>
-            </div>
-          </div>
-          <label class="auth-remember">
-            <input type="checkbox" id="auth-remember" />
-            <span class="auth-checkbox-custom"></span>
-            <span>Recordarme en este dispositivo</span>
-          </label>
-          <div class="auth-error" id="auth-error"></div>
-          <button class="auth-btn" id="auth-submit">Entrar</button>
-        </div>`;
-    }
-
-    if (mode === 'setup') {
-      el.innerHTML = `
-        <div class="auth-card">
-          ${logo}
-          <div class="auth-heading">
-            <h2>Crear contraseña</h2>
-            <p class="auth-sub">Protege tu BudgetFlow. Esta contraseña se pedirá en dispositivos nuevos.</p>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Nueva contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-pw" class="auth-input"
-                placeholder="Mínimo 6 caracteres" autocomplete="new-password" autofocus />
-              <button type="button" class="auth-eye" id="auth-eye">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Confirmar contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-pw2" class="auth-input"
-                placeholder="Repite la contraseña" autocomplete="new-password" />
-              <button type="button" class="auth-eye" id="auth-eye2">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          ${durationSelect}
-          <div class="auth-error" id="auth-error"></div>
-          <button class="auth-btn" id="auth-submit">Crear contraseña</button>
-        </div>`;
-    }
-
-    if (mode === 'expired') {
-      el.innerHTML = `
-        <div class="auth-card">
-          ${logo}
-          <div class="auth-heading">
-            <div class="auth-badge-warn">Contraseña vencida</div>
-            <h2>Tiempo de renovar</h2>
-            <p class="auth-sub">Tu contraseña ha vencido. Crea una nueva para continuar.</p>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Contraseña actual</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-old-pw" class="auth-input"
-                placeholder="••••••••" autocomplete="current-password" autofocus />
-              <button type="button" class="auth-eye" id="auth-eye-old">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Nueva contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-pw" class="auth-input"
-                placeholder="Mínimo 6 caracteres" autocomplete="new-password" />
-              <button type="button" class="auth-eye" id="auth-eye">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Confirmar nueva contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-pw2" class="auth-input"
-                placeholder="Repite la contraseña" autocomplete="new-password" />
-              <button type="button" class="auth-eye" id="auth-eye2">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          ${durationSelect}
-          <div class="auth-error" id="auth-error"></div>
-          <button class="auth-btn" id="auth-submit">Renovar contraseña</button>
-        </div>`;
-    }
-
-    document.body.appendChild(el);
-    Auth._bindOverlayEvents(mode);
-  },
-
-  _eyeIcon(visible) {
-    return visible
-      ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-           <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-           <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-           <line x1="1" y1="1" x2="23" y2="23"/>
-         </svg>`
-      : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-           <circle cx="12" cy="12" r="3"/>
-         </svg>`;
-  },
-
-  _bindEye(btnId, inputId) {
-    const btn = document.getElementById(btnId);
-    const inp = document.getElementById(inputId);
-    if (!btn || !inp) return;
-    let visible = false;
-    btn.addEventListener('click', () => {
-      visible = !visible;
-      inp.type      = visible ? 'text' : 'password';
-      btn.innerHTML = Auth._eyeIcon(visible);
-    });
-  },
-
-  _showError(msg) {
-    const el = document.getElementById('auth-error');
-    if (el) { el.textContent = msg; el.style.display = msg ? 'block' : 'none'; }
-  },
-
-  _bindOverlayEvents(mode) {
-    Auth._bindEye('auth-eye',     'auth-pw');
-    Auth._bindEye('auth-eye2',    'auth-pw2');
-    Auth._bindEye('auth-eye-old', 'auth-old-pw');
-
-    const submit = document.getElementById('auth-submit');
-    if (!submit) return;
-
-    document.getElementById('auth-overlay').querySelectorAll('.auth-input').forEach(inp => {
-      inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit.click(); });
-    });
-
-    if (mode === 'lock') {
-      submit.addEventListener('click', async () => {
-        const pw  = document.getElementById('auth-pw')?.value || '';
-        const rem = document.getElementById('auth-remember')?.checked;
-        Auth._showError('');
-        submit.disabled     = true;
-        submit.textContent  = 'Verificando…';
-
-        const ok = await Auth.verify(pw);
-        if (!ok) {
-          Auth._showError('Contraseña incorrecta. Intenta de nuevo.');
-          submit.disabled    = false;
-          submit.textContent = 'Entrar';
-          document.getElementById('auth-pw').value = '';
-          document.getElementById('auth-pw').focus();
-          return;
-        }
-        if (rem) await Auth.createSession();
-        Auth._unlock();
-      });
-    }
-
-    if (mode === 'setup') {
-      submit.addEventListener('click', async () => {
-        const pw  = document.getElementById('auth-pw')?.value  || '';
-        const pw2 = document.getElementById('auth-pw2')?.value || '';
-        const dur = parseInt(document.getElementById('auth-duration')?.value || '30', 10);
-        Auth._showError('');
-
-        if (pw.length < 6) { Auth._showError('La contraseña debe tener al menos 6 caracteres.'); return; }
-        if (pw !== pw2)    { Auth._showError('Las contraseñas no coinciden.'); return; }
-
-        submit.disabled    = true;
-        submit.textContent = 'Guardando…';
-        await Auth.setPassword(pw, dur);
-        Auth._unlock();
-      });
-    }
-
-    if (mode === 'expired') {
-      submit.addEventListener('click', async () => {
-        const oldPw = document.getElementById('auth-old-pw')?.value || '';
-        const pw    = document.getElementById('auth-pw')?.value     || '';
-        const pw2   = document.getElementById('auth-pw2')?.value    || '';
-        const dur   = parseInt(document.getElementById('auth-duration')?.value || '30', 10);
-        Auth._showError('');
-        submit.disabled    = true;
-        submit.textContent = 'Verificando…';
-
-        const oldOk = await Auth.verify(oldPw);
-        if (!oldOk) {
-          Auth._showError('La contraseña actual es incorrecta.');
-          submit.disabled    = false;
-          submit.textContent = 'Renovar contraseña';
-          return;
-        }
-        if (pw.length < 6) { Auth._showError('La nueva contraseña debe tener al menos 6 caracteres.'); submit.disabled = false; submit.textContent = 'Renovar contraseña'; return; }
-        if (pw !== pw2)    { Auth._showError('Las contraseñas no coinciden.'); submit.disabled = false; submit.textContent = 'Renovar contraseña'; return; }
-
-        await Auth.setPassword(pw, dur);
-        Auth._unlock();
-      });
-    }
-  },
-
-  /* ---- Panel de ajustes integrado ---- */
-  async renderSettingsPanel() {
-    const cfg       = await Auth._loadCfg();
-    const configured = !!cfg?.hash;
-    const d          = await Auth.expiresInDays();
-    const daysLabel  = configured
-      ? (d === Infinity ? '—' : (d <= 0 ? 'Vencida' : `${d} día${d !== 1 ? 's' : ''} restantes`))
-      : '—';
-    const warn       = configured && d <= 7 && d > 0;
-    const expiresDate = cfg?.expiresAt
-      ? new Date(cfg.expiresAt).toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' })
-      : '—';
-
-    return `
-      <div class="auth-settings-panel" id="auth-settings-panel">
-        <div class="auth-settings-row">
-          <div>
-            <div class="auth-settings-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-              </svg>
-              Contraseña de acceso
-            </div>
-            <div class="auth-settings-meta">
-              ${configured
-                ? `Activa · Vence el <strong>${expiresDate}</strong> · <span class="${warn ? 'auth-warn-text' : ''}">${daysLabel}</span>`
-                : 'Sin contraseña configurada'}
-            </div>
-          </div>
-          <button class="auth-settings-btn" id="auth-settings-change">
-            ${configured ? 'Cambiar' : 'Crear'}
-          </button>
-        </div>
-        ${configured ? `
-        <div class="auth-settings-row" style="padding-top:.5rem;border-top:1px solid var(--border)">
-          <span class="auth-settings-meta">Cerrar sesión en este dispositivo</span>
-          <button class="auth-settings-btn danger" id="auth-settings-logout">Cerrar sesión</button>
-        </div>
-        <div class="auth-settings-row" style="padding-top:.5rem;border-top:1px solid var(--border)">
-          <span class="auth-settings-meta">Eliminar contraseña de todos los dispositivos</span>
-          <button class="auth-settings-btn danger" id="auth-settings-remove">Eliminar</button>
-        </div>` : ''}
-      </div>`;
-  },
-
-  bindSettingsEvents() {
-    document.getElementById('auth-settings-change')?.addEventListener('click', () => {
-      Auth._showChangeModal();
-    });
-    document.getElementById('auth-settings-logout')?.addEventListener('click', () => {
-      if (confirm('¿Cerrar sesión en este dispositivo?')) Auth.logout();
-    });
-    document.getElementById('auth-settings-remove')?.addEventListener('click', async () => {
-      if (confirm('¿Eliminar la contraseña? Cualquiera con la URL podrá acceder.')) {
-        await Auth.removePassword();
-        const panel = document.getElementById('auth-settings-panel');
-        if (panel) {
-          panel.outerHTML = await Auth.renderSettingsPanel();
-          Auth.bindSettingsEvents();
-        }
-      }
-    });
-  },
-
-  _showChangeModal() {
-    const modal   = document.getElementById('modal-overlay');
-    const content = document.getElementById('modal-content');
-    if (!modal || !content) return;
-
-    Auth.isConfigured().then(configured => {
-      Auth.getDurationDays().then(currentDur => {
-        const DURATION_OPTIONS = [15, 30, 60, 90, 180];
-        content.innerHTML = `
-          <div class="modal-header">
-            <h3>${configured ? 'Cambiar contraseña' : 'Crear contraseña'}</h3>
-            <button class="icon-btn" id="modal-close-auth">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </button>
-          </div>
-          ${configured ? `
-          <div class="field" style="margin-bottom:1rem">
-            <label class="auth-label">Contraseña actual</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="modal-old-pw" class="auth-input" placeholder="••••••••" />
-              <button type="button" class="auth-eye" id="modal-eye-old">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>` : ''}
-          <div class="field" style="margin-bottom:1rem">
-            <label class="auth-label">Nueva contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="modal-new-pw" class="auth-input" placeholder="Mínimo 6 caracteres" />
-              <button type="button" class="auth-eye" id="modal-eye-new">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          <div class="field" style="margin-bottom:1rem">
-            <label class="auth-label">Confirmar nueva contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="modal-new-pw2" class="auth-input" placeholder="Repite la contraseña" />
-              <button type="button" class="auth-eye" id="modal-eye-new2">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          <div class="field" style="margin-bottom:1.25rem">
-            <label class="auth-label">Vigencia</label>
-            <select class="auth-select" id="modal-duration">
-              ${DURATION_OPTIONS.map(v => {
-                const labels = { 15:'15 días', 30:'30 días', 60:'2 meses', 90:'3 meses', 180:'6 meses' };
-                return `<option value="${v}" ${v === currentDur ? 'selected' : ''}>${labels[v]}</option>`;
-              }).join('')}
-            </select>
-          </div>
-          <div class="auth-error" id="modal-auth-error"></div>
-          <div style="display:flex;gap:.75rem">
-            <button class="btn-ghost" id="modal-cancel-auth">Cancelar</button>
-            <button class="btn-primary" id="modal-save-auth" style="flex:1">Guardar contraseña</button>
-          </div>`;
-
-        modal.style.display = 'flex';
-
-        Auth._bindEye('modal-eye-old',  'modal-old-pw');
-        Auth._bindEye('modal-eye-new',  'modal-new-pw');
-        Auth._bindEye('modal-eye-new2', 'modal-new-pw2');
-
-        const closeModal = () => { modal.style.display = 'none'; };
-        document.getElementById('modal-close-auth')?.addEventListener('click', closeModal);
-        document.getElementById('modal-cancel-auth')?.addEventListener('click', closeModal);
-
-        document.getElementById('modal-save-auth')?.addEventListener('click', async () => {
-          const oldPw = document.getElementById('modal-old-pw')?.value || '';
-          const pw    = document.getElementById('modal-new-pw')?.value || '';
-          const pw2   = document.getElementById('modal-new-pw2')?.value || '';
-          const dur   = parseInt(document.getElementById('modal-duration')?.value || '30', 10);
-          const errEl = document.getElementById('modal-auth-error');
-          if (errEl) errEl.textContent = '';
-
-          if (configured) {
-            const oldOk = await Auth.verify(oldPw);
-            if (!oldOk) { if (errEl) { errEl.textContent = 'La contraseña actual es incorrecta.'; errEl.style.display = 'block'; } return; }
-          }
-          if (pw.length < 6) { if (errEl) { errEl.textContent = 'Mínimo 6 caracteres.'; errEl.style.display = 'block'; } return; }
-          if (pw !== pw2)    { if (errEl) { errEl.textContent = 'Las contraseñas no coinciden.'; errEl.style.display = 'block'; } return; }
-
-          await Auth.setPassword(pw, dur);
-          closeModal();
-          if (window.toast) toast('🔒 Contraseña actualizada');
-
-          // Re-renderizar panel de ajustes si existe
-          const panel = document.getElementById('auth-settings-panel');
-          if (panel) {
-            panel.outerHTML = await Auth.renderSettingsPanel();
-            Auth.bindSettingsEvents();
-          }
-        });
-      });
-    });
+  .calc-panel {
+    bottom: 0;
+    right: 0;
+    left: 0;
+    width: 100%;
+    border-radius: 20px 20px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, .5rem);
   }
-};
 
-window.Auth = Auth;
+  .calc-grid { gap: .35rem; padding: 0 .6rem .6rem; }
+  .calc-btn { height: 62px; }
+
+  /* Category summary: switch from fixed-width grid to responsive flex cards */
+  .cat-summary-header { display: none; }
+  .cat-summary-row {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: .5rem;
+    row-gap: .35rem;
+    padding: .8rem 1.25rem;
+    grid-template-columns: none; /* override desktop grid */
+  }
+  .cat-sum-name        { width: 100%; }
+  .cat-sum-bar-wrap    { width: 100%; margin-bottom: .1rem; }
+  .cat-sum-col         { flex: 1; min-width: 70px; text-align: left; display: flex; flex-direction: column; }
+  .cat-sum-col:nth-child(4) { display: flex; } /* un-hide the hidden column */
+}
+
+/* ============================================================
+   MOBILE RESPONSIVE  ≤ 768px
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+
+  .app-shell { margin-left: 0; padding-bottom: 70px; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .875rem 1rem;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 3rem;
+    margin: 0 .5rem .5rem;
+    border-radius: 12px;
+    z-index: 100;
+  }
+
+  .topbar .logo { font-size: .9rem; }
+
+  .content { padding: 1rem; padding-top: 7.2rem; }
+
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .charts-grid { grid-template-columns: 1fr; }
+  .form-grid { grid-template-columns: 1fr; }
+  .form-row { flex-direction: column; }
+  .form-row .field { width: 100%; }
+  .expense-table-header { display: none; }
+  .expense-row {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: .25rem;
+  }
+  .expense-actions {
+    justify-content: flex-start;
+    margin-top: .15rem;
+    grid-column: 1 / -1;
+  }
+  .exp-date, .exp-tag { font-size: .7rem; }
+
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    z-index: 100;
+    padding: .25rem 0 env(safe-area-inset-bottom, .25rem);
+  }
+
+  .bnav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .2rem;
+    padding: .5rem .25rem;
+    background: transparent;
+    border: none;
+    color: var(--text-3);
+    font-size: .65rem;
+    font-weight: 500;
+    transition: color .15s;
+  }
+
+  .bnav-item.active { color: var(--primary); }
+  .bnav-item svg { transition: transform .15s; }
+  .bnav-item.active svg { transform: scale(1.1); }
+
+  .dist-form { flex-direction: column; }
+  .dist-form > * { width: 100%; }
+
+  .source-stats { gap: 1rem; }
+  .toast { bottom: 5rem; right: 1rem; left: 1rem; max-width: none; }
+}
+
+@media (max-width: 480px) {
+  .kpi-grid { grid-template-columns: 1fr 1fr; }
+  .kpi-value { font-size: 1.1rem; }
+}
+
+/* ============================================================
+   MEDIUM SCREENS  769px – 1024px
+   ============================================================ */
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .charts-grid { grid-template-columns: 1fr 1fr; }
+  :root { --sidebar-w: 200px; }
+  .form-grid { grid-template-columns: repeat(2, 1fr); }
+}
+/* ============================================================
+   BUDGETFLOW — AUTH STYLES
+   Agrega estas reglas al final de styles.css
+   ============================================================ */
+
+/* ---- Overlay de pantalla completa ---- */
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: 1.5rem;
+  animation: authFadeIn .25s ease both;
+}
+
+@keyframes authFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.auth-overlay.auth-fade-out {
+  animation: authFadeOut .3s ease both;
+}
+
+@keyframes authFadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-8px); }
+}
+
+@keyframes auth-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- Card central ---- */
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2rem 2rem 1.75rem;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* ---- Logo ---- */
+.auth-logo {
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+  margin-bottom: .25rem;
+}
+
+.auth-logo-name {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -.03em;
+  color: var(--text);
+}
+
+/* ---- Heading ---- */
+.auth-heading { display: flex; flex-direction: column; gap: .35rem; }
+.auth-heading h2 { font-size: 1.25rem; font-weight: 700; letter-spacing: -.02em; color: var(--text); line-height: 1.2; }
+.auth-sub { font-size: .8rem; color: var(--text-2); line-height: 1.5; }
+
+/* ---- Badge vencida ---- */
+.auth-badge-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  border-radius: 999px;
+  font-size: .7rem;
+  font-weight: 600;
+  padding: .2rem .65rem;
+  width: fit-content;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+/* ---- Fields ---- */
+.auth-field { display: flex; flex-direction: column; gap: .4rem; }
+.auth-label { font-size: .75rem; font-weight: 500; color: var(--text-2); letter-spacing: .01em; }
+
+.auth-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.auth-input {
+  width: 100%;
+  padding: .6rem .875rem;
+  padding-right: 2.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text);
+  font-family: inherit;
+  font-size: .875rem;
+  transition: border-color .15s, box-shadow .15s;
+  outline: none;
+}
+
+.auth-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.auth-input::placeholder { color: var(--text-3); }
+
+.auth-eye {
+  position: absolute;
+  right: .625rem;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: .25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color .15s;
+}
+.auth-eye:hover { color: var(--text-2); }
+
+.auth-select {
+  width: 100%;
+  padding: .6rem .875rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text);
+  font-family: inherit;
+  font-size: .875rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color .15s;
+}
+.auth-select:focus { border-color: var(--primary); }
+
+/* ---- Checkbox "Recordarme" ---- */
+.auth-remember {
+  display: flex;
+  align-items: center;
+  gap: .625rem;
+  cursor: pointer;
+  font-size: .8rem;
+  color: var(--text-2);
+  user-select: none;
+}
+
+.auth-remember input[type="checkbox"] { display: none; }
+
+.auth-checkbox-custom {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-focus);
+  background: var(--bg-alt);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s, border-color .15s;
+  position: relative;
+}
+
+.auth-remember input[type="checkbox"]:checked + .auth-checkbox-custom {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.auth-remember input[type="checkbox"]:checked + .auth-checkbox-custom::after {
+  content: '';
+  display: block;
+  width: 4px;
+  height: 7px;
+  border: 1.5px solid white;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+/* ---- Error ---- */
+.auth-error {
+  display: none;
+  font-size: .78rem;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+  border-radius: var(--radius);
+  padding: .5rem .75rem;
+  line-height: 1.45;
+}
+
+/* ---- Buttons ---- */
+.auth-btn {
+  width: 100%;
+  padding: .65rem 1rem;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: inherit;
+  font-size: .875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s, transform .1s;
+  letter-spacing: -.01em;
+}
+.auth-btn:hover   { opacity: .88; }
+.auth-btn:active  { transform: scale(.98); }
+.auth-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- Settings panel ---- */
+.auth-settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+
+.auth-security-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+  padding: .85rem;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 11%, var(--card)) 0%, var(--card) 100%);
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+}
+
+.auth-security-hero-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--primary) 20%, var(--bg-alt));
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+.auth-security-hero-title {
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: .18rem;
+}
+
+.auth-security-hero-subtitle {
+  font-size: .75rem;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.auth-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .8rem .85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--card) 85%, var(--bg-alt));
+}
+
+.auth-settings-title {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .875rem;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: .2rem;
+}
+
+.auth-settings-meta {
+  font-size: .78rem;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+#security-modal-content {
+  max-width: 560px;
+}
+
+#security-modal-content .modal-header {
+  padding: 1rem 1rem .6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+#security-modal-body {
+  padding: 1rem;
+  background: color-mix(in srgb, var(--card) 90%, var(--bg-alt));
+}
+
+.auth-settings-btn {
+  flex-shrink: 0;
+  padding: .35rem .85rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  color: var(--text);
+  font-family: inherit;
+  font-size: .78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  white-space: nowrap;
+}
+.auth-settings-btn:hover  { background: var(--border); }
+.auth-settings-btn.danger { color: var(--danger); }
+.auth-settings-btn.danger:hover { background: color-mix(in srgb, var(--danger) 10%, var(--bg-alt)); border-color: color-mix(in srgb, var(--danger) 25%, var(--border)); }
+
+.auth-warn-text { color: var(--warn); font-weight: 600; }
+
+/* ---- Responsive ---- */
+@media (max-width: 768px) {
+  .auth-card { padding: 1.625rem 1.375rem 1.5rem; }
+  .auth-settings-row { flex-direction: column; align-items: flex-start; gap: .5rem; }
+  .auth-settings-btn { align-self: flex-start; }
+}
