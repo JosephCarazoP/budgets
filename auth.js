@@ -51,6 +51,12 @@ async function pullAuthCfgFromCloud() {
   }
 }
 
+function isCfgNewer(a, b) {
+  const av = Number(a?.updatedAt || a?.createdAt || 0);
+  const bv = Number(b?.updatedAt || b?.createdAt || 0);
+  return av > bv;
+}
+
 async function pushAuthCfgToCloud(cfg) {
   if (!window.db || !window.STATE_ROW_ID) return;
   try {
@@ -114,7 +120,7 @@ const Auth = {
     const hash      = await sha256(plain);
     const createdAt = now();
     const expiresAt = createdAt + daysMs(durationDays);
-    const cfg = { hash, createdAt, expiresAt, durationDays };
+    const cfg = { hash, createdAt, expiresAt, durationDays, updatedAt: now() };
     setAuthCfg(cfg);
     await pushAuthCfgToCloud(cfg);
     clearSession();          // Forzar re-login en todos los dispositivos
@@ -157,11 +163,18 @@ const Auth = {
   async init(onUnlocked) {
     Auth._onUnlocked = onUnlocked;
 
-    // Si este dispositivo no tiene configuración local, intentar hidratarla desde la nube.
-    if (!Auth.isConfigured()) {
-      const cloudCfg = await pullAuthCfgFromCloud();
-      if (cloudCfg?.hash) setAuthCfg(cloudCfg);
+    // Estrategia nueva: nube como fuente de verdad.
+    // Siempre intentamos hidratar/sincronizar para evitar desfases entre Safari/PWA/otros.
+    const localCfg = getAuthCfg();
+    const cloudCfg = await pullAuthCfgFromCloud();
+    if (cloudCfg?.hash) {
+      if (!localCfg || isCfgNewer(cloudCfg, localCfg)) setAuthCfg(cloudCfg);
+    } else if (localCfg?.hash && window.db) {
+      // Si hay cfg local pero no en nube, la publicamos para alinear dispositivos.
+      await pushAuthCfgToCloud(localCfg);
     }
+
+    Auth._startAuthRealtimeSync();
 
     if (!Auth.isConfigured()) {
       // Primera vez: mostrar pantalla de creación de contraseña
@@ -181,6 +194,30 @@ const Auth = {
     }
 
     Auth.showLock();
+  },
+
+  _authChannel: null,
+  _startAuthRealtimeSync() {
+    if (!window.db || !window.STATE_ROW_ID || Auth._authChannel) return;
+    Auth._authChannel = window.db.channel('budget-auth-sync')
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'budget_state',
+        filter: `id=eq.${window.STATE_ROW_ID}`
+      }, async (payload) => {
+        const remoteCfg = payload.new?.data?._authCfg || null;
+        const localCfg = getAuthCfg();
+        if (!remoteCfg?.hash) return;
+        if (!localCfg || isCfgNewer(remoteCfg, localCfg)) {
+          setAuthCfg(remoteCfg);
+          clearSession();
+          if (document.getElementById('auth-overlay')) return;
+          Auth.showLock();
+          if (window.toast) toast('🔐 Seguridad actualizada. Vuelve a iniciar sesión.');
+        }
+      })
+      .subscribe();
   },
 
   showLock() { Auth._renderOverlay('lock'); },
@@ -467,6 +504,18 @@ const Auth = {
 
     return `
       <div class="auth-settings-panel" id="auth-settings-panel">
+        <div class="auth-security-hero">
+          <div class="auth-security-hero-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <div>
+            <div class="auth-security-hero-title">Protección de acceso</div>
+            <div class="auth-security-hero-subtitle">Agrega una contraseña para bloquear tu presupuesto cuando cierres sesión o venza la vigencia.</div>
+          </div>
+        </div>
+
         <div class="auth-settings-row">
           <div>
             <div class="auth-settings-title">

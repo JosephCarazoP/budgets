@@ -1,6 +1,7 @@
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `budgetflow-static-${VERSION}`;
-const APP_SHELL = ['/', '/index.html', '/app.js', '/styles.css', '/manifest.json'];
+const APP_SHELL = ['/', '/index.html', '/app.js', '/auth.js', '/styles.css', '/manifest.json'];
+const CRITICAL_ASSETS = new Set(['/index.html', '/app.js', '/auth.js', '/styles.css', '/manifest.json']);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));
@@ -38,6 +39,24 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(async () => {
           const cached = await caches.match('/index.html');
+          return cached || Response.error();
+        })
+    );
+    return;
+  }
+
+  if (CRITICAL_ASSETS.has(url.pathname)) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(event.request);
           return cached || Response.error();
         })
     );
