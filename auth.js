@@ -602,107 +602,161 @@ const Auth = {
 
   bindSettingsEvents() {
     document.getElementById('auth-settings-change')?.addEventListener('click', () => {
+      // Cerrar el modal de seguridad antes de abrir el de cambio de contraseña
+      const secOverlay = document.getElementById('security-modal-overlay');
+      if (secOverlay) secOverlay.style.display = 'none';
       Auth._showChangeModal();
     });
     document.getElementById('auth-settings-logout')?.addEventListener('click', () => {
       if (confirm('¿Cerrar sesión en este dispositivo?')) Auth.logout();
     });
-    document.getElementById('auth-settings-remove')?.addEventListener('click', async () => {
-      if (confirm('¿Eliminar la contraseña? Cualquiera con la URL podrá acceder.')) {
-        await Auth.removePassword();
-        const panel = document.getElementById('auth-settings-panel');
-        if (panel) {
-          panel.outerHTML = await Auth.renderSettingsPanel();
-          Auth.bindSettingsEvents();
-        }
-      }
+    document.getElementById('auth-settings-remove')?.addEventListener('click', () => {
+      Auth._showConfirmRemoveModal();
+    });
+  },
+
+  /** Modal de confirmación para eliminar contraseña — reemplaza el confirm() nativo. */
+  _showConfirmRemoveModal() {
+    // Cerrar el modal de seguridad
+    const secOverlay = document.getElementById('security-modal-overlay');
+    if (secOverlay) secOverlay.style.display = 'none';
+
+    const el = document.createElement('div');
+    el.id = 'auth-confirm-overlay';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem;animation:fadeIn .15s ease';
+    el.innerHTML = `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:380px;padding:1.5rem;box-shadow:var(--shadow-md)">
+        <div style="display:flex;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem">
+          <div style="flex-shrink:0;width:2.25rem;height:2.25rem;border-radius:50%;background:color-mix(in srgb,var(--danger) 12%,transparent);display:flex;align-items:center;justify-content:center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.5">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-weight:600;font-size:.9375rem;margin-bottom:.3rem">¿Eliminar contraseña?</div>
+            <div style="font-size:.8125rem;color:var(--text-secondary);line-height:1.45">Cualquier persona con acceso a la URL podrá entrar a tu presupuesto sin restricción.</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:.625rem;justify-content:flex-end">
+          <button id="auth-confirm-cancel" style="padding:.5rem 1rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-alt);color:var(--text);font-family:inherit;font-size:.875rem;font-weight:500;cursor:pointer">Cancelar</button>
+          <button id="auth-confirm-delete" style="padding:.5rem 1rem;border-radius:var(--radius);border:1px solid color-mix(in srgb,var(--danger) 35%,transparent);background:color-mix(in srgb,var(--danger) 10%,var(--bg-alt));color:var(--danger);font-family:inherit;font-size:.875rem;font-weight:600;cursor:pointer">Eliminar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(el);
+
+    const close = () => el.remove();
+    document.getElementById('auth-confirm-cancel').addEventListener('click', close);
+    document.getElementById('auth-confirm-delete').addEventListener('click', async () => {
+      close();
+      await Auth.removePassword();
+      Auth._cfg = null;
+      if (window.toast) toast('🔓 Contraseña eliminada');
     });
   },
 
   _showChangeModal() {
-    const modal   = document.getElementById('modal-overlay');
-    const content = document.getElementById('modal-content');
-    if (!modal || !content) return;
+    // Crear overlay propio encima de todo (z-index > modal de seguridad)
+    document.getElementById('auth-change-overlay')?.remove();
 
     Auth.isConfigured().then(configured => {
       Auth.getDurationDays().then(currentDur => {
         const DURATION_OPTIONS = [15, 30, 60, 90, 180];
-        content.innerHTML = `
-          <div class="modal-header">
-            <h3>${configured ? 'Cambiar contraseña' : 'Crear contraseña'}</h3>
-            <button class="icon-btn" id="modal-close-auth">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </button>
-          </div>
-          ${configured ? `
-          <div class="field" style="margin-bottom:1rem">
-            <label class="auth-label">Contraseña actual</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="modal-old-pw" class="auth-input" placeholder="••••••••" />
-              <button type="button" class="auth-eye" id="modal-eye-old">${Auth._eyeIcon(false)}</button>
+        const durationLabels   = { 15:'15 días', 30:'30 días', 60:'2 meses', 90:'3 meses', 180:'6 meses' };
+
+        const el = document.createElement('div');
+        el.id = 'auth-change-overlay';
+        el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem;animation:fadeIn .15s ease';
+        el.innerHTML = `
+          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:400px;box-shadow:var(--shadow-md);overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border)">
+              <h3 style="margin:0;font-size:1rem;font-weight:600">${configured ? 'Cambiar contraseña' : 'Crear contraseña'}</h3>
+              <button id="auth-change-close" style="display:flex;align-items:center;justify-content:center;width:1.75rem;height:1.75rem;border-radius:var(--radius);border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
             </div>
-          </div>` : ''}
-          <div class="field" style="margin-bottom:1rem">
-            <label class="auth-label">Nueva contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="modal-new-pw" class="auth-input" placeholder="Mínimo 6 caracteres" />
-              <button type="button" class="auth-eye" id="modal-eye-new">${Auth._eyeIcon(false)}</button>
+            <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.875rem">
+              ${configured ? `
+              <div>
+                <label class="auth-label" style="display:block;margin-bottom:.35rem">Contraseña actual</label>
+                <div class="auth-input-wrap">
+                  <input type="password" id="ach-old-pw" class="auth-input" placeholder="••••••••" autocomplete="current-password" autofocus />
+                  <button type="button" class="auth-eye" id="ach-eye-old">${Auth._eyeIcon(false)}</button>
+                </div>
+              </div>` : ''}
+              <div>
+                <label class="auth-label" style="display:block;margin-bottom:.35rem">Nueva contraseña</label>
+                <div class="auth-input-wrap">
+                  <input type="password" id="ach-new-pw" class="auth-input" placeholder="Mínimo 6 caracteres" autocomplete="new-password" ${!configured ? 'autofocus' : ''} />
+                  <button type="button" class="auth-eye" id="ach-eye-new">${Auth._eyeIcon(false)}</button>
+                </div>
+              </div>
+              <div>
+                <label class="auth-label" style="display:block;margin-bottom:.35rem">Confirmar contraseña</label>
+                <div class="auth-input-wrap">
+                  <input type="password" id="ach-new-pw2" class="auth-input" placeholder="Repite la contraseña" autocomplete="new-password" />
+                  <button type="button" class="auth-eye" id="ach-eye-new2">${Auth._eyeIcon(false)}</button>
+                </div>
+              </div>
+              <div>
+                <label class="auth-label" style="display:block;margin-bottom:.35rem">Vigencia</label>
+                <select class="auth-select" id="ach-duration">
+                  ${DURATION_OPTIONS.map(v => `<option value="${v}" ${v === currentDur ? 'selected' : ''}>${durationLabels[v]}</option>`).join('')}
+                </select>
+              </div>
+              <div class="auth-error" id="ach-error" style="display:none"></div>
+              <div style="display:flex;gap:.625rem;padding-top:.125rem">
+                <button id="ach-cancel" style="padding:.5rem 1rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-alt);color:var(--text);font-family:inherit;font-size:.875rem;font-weight:500;cursor:pointer;flex-shrink:0">Cancelar</button>
+                <button id="ach-save" style="flex:1;padding:.5rem 1rem;border-radius:var(--radius);border:none;background:var(--accent);color:#fff;font-family:inherit;font-size:.875rem;font-weight:600;cursor:pointer">Guardar</button>
+              </div>
             </div>
-          </div>
-          <div class="field" style="margin-bottom:1rem">
-            <label class="auth-label">Confirmar nueva contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="modal-new-pw2" class="auth-input" placeholder="Repite la contraseña" />
-              <button type="button" class="auth-eye" id="modal-eye-new2">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          <div class="field" style="margin-bottom:1.25rem">
-            <label class="auth-label">Vigencia</label>
-            <select class="auth-select" id="modal-duration">
-              ${DURATION_OPTIONS.map(v => {
-                const labels = { 15:'15 días', 30:'30 días', 60:'2 meses', 90:'3 meses', 180:'6 meses' };
-                return `<option value="${v}" ${v === currentDur ? 'selected' : ''}>${labels[v]}</option>`;
-              }).join('')}
-            </select>
-          </div>
-          <div class="auth-error" id="modal-auth-error"></div>
-          <div style="display:flex;gap:.75rem">
-            <button class="btn-ghost" id="modal-cancel-auth">Cancelar</button>
-            <button class="btn-primary" id="modal-save-auth" style="flex:1">Guardar contraseña</button>
           </div>`;
 
-        modal.style.display = 'flex';
+        document.body.appendChild(el);
 
-        Auth._bindEye('modal-eye-old',  'modal-old-pw');
-        Auth._bindEye('modal-eye-new',  'modal-new-pw');
-        Auth._bindEye('modal-eye-new2', 'modal-new-pw2');
+        Auth._bindEye('ach-eye-old',  'ach-old-pw');
+        Auth._bindEye('ach-eye-new',  'ach-new-pw');
+        Auth._bindEye('ach-eye-new2', 'ach-new-pw2');
 
-        const closeModal = () => { modal.style.display = 'none'; };
-        document.getElementById('modal-close-auth')?.addEventListener('click', closeModal);
-        document.getElementById('modal-cancel-auth')?.addEventListener('click', closeModal);
+        const showErr = (msg) => {
+          const errEl = document.getElementById('ach-error');
+          if (!errEl) return;
+          errEl.textContent = msg;
+          errEl.style.display = msg ? 'block' : 'none';
+        };
 
-        document.getElementById('modal-save-auth')?.addEventListener('click', async () => {
-          const oldPw = document.getElementById('modal-old-pw')?.value || '';
-          const pw    = document.getElementById('modal-new-pw')?.value || '';
-          const pw2   = document.getElementById('modal-new-pw2')?.value || '';
-          const dur   = parseInt(document.getElementById('modal-duration')?.value || '30', 10);
-          const errEl = document.getElementById('modal-auth-error');
-          if (errEl) errEl.textContent = '';
+        const close = () => el.remove();
+        document.getElementById('auth-change-close').addEventListener('click', close);
+        document.getElementById('ach-cancel').addEventListener('click', close);
+
+        // Enter en cualquier campo dispara guardar
+        el.querySelectorAll('.auth-input').forEach(inp => {
+          inp.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('ach-save')?.click(); });
+        });
+
+        document.getElementById('ach-save').addEventListener('click', async () => {
+          const oldPw = document.getElementById('ach-old-pw')?.value || '';
+          const pw    = document.getElementById('ach-new-pw')?.value  || '';
+          const pw2   = document.getElementById('ach-new-pw2')?.value || '';
+          const dur   = parseInt(document.getElementById('ach-duration')?.value || '30', 10);
+          showErr('');
 
           if (configured) {
             const oldOk = await Auth.verify(oldPw);
-            if (!oldOk) { if (errEl) { errEl.textContent = 'La contraseña actual es incorrecta.'; errEl.style.display = 'block'; } return; }
+            if (!oldOk) { showErr('La contraseña actual es incorrecta.'); return; }
           }
-          if (pw.length < 6) { if (errEl) { errEl.textContent = 'Mínimo 6 caracteres.'; errEl.style.display = 'block'; } return; }
-          if (pw !== pw2)    { if (errEl) { errEl.textContent = 'Las contraseñas no coinciden.'; errEl.style.display = 'block'; } return; }
+          if (pw.length < 6) { showErr('La contraseña debe tener al menos 6 caracteres.'); return; }
+          if (pw !== pw2)    { showErr('Las contraseñas no coinciden.'); return; }
+
+          const btn = document.getElementById('ach-save');
+          btn.disabled = true; btn.textContent = 'Guardando…';
 
           await Auth.setPassword(pw, dur);
-          closeModal();
+          close();
           if (window.toast) toast('🔒 Contraseña actualizada');
 
-          // Re-renderizar panel de ajustes si existe
+          // Actualizar panel de seguridad si está abierto
           const panel = document.getElementById('auth-settings-panel');
           if (panel) {
             panel.outerHTML = await Auth.renderSettingsPanel();
