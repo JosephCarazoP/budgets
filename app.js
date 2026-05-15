@@ -1,15 +1,21 @@
 'use strict';
 
 /* ============================================================
-   SUPABASE CONFIG
+   FIREBASE CONFIG
    Reemplazá estos dos valores con los de tu proyecto:
-   Supabase Dashboard → Settings → API
+   Firebase Console → Project settings → Your apps
    ============================================================ */
 
-const SUPABASE_URL = 'https://jljdudxbggewxvqmxlvj.supabase.co'; 
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsamR1ZHhiZ2dld3h2cW14bHZqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg3MDMwNjYsImV4cCI6MjA5NDI3OTA2Nn0.eJAmo8cxkOr5em89domd0NWimI17TUAfaUH0Xo4Pncc';
-const STATE_ROW_ID = 'default';
-window.STATE_ROW_ID = STATE_ROW_ID;
+const FIREBASE_CONFIG = {
+  apiKey: 'YOUR_FIREBASE_API_KEY',
+  authDomain: 'YOUR_PROJECT.firebaseapp.com',
+  projectId: 'YOUR_PROJECT_ID',
+  storageBucket: 'YOUR_PROJECT.appspot.com',
+  messagingSenderId: 'YOUR_SENDER_ID',
+  appId: 'YOUR_APP_ID'
+};
+const STATE_DOC_ID = 'default';
+window.STATE_DOC_ID = STATE_DOC_ID;
 
 /* ============================================================
    STATE
@@ -49,32 +55,32 @@ function rebuildDistributionsFromAssignments() {
 }
 
 /* ============================================================
-   SUPABASE CLIENT
+   FIREBASE CLIENT
    ============================================================ */
 
-const _supabaseReady = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_KEY !== 'YOUR_SUPABASE_ANON_KEY';
-const db = _supabaseReady ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+const _firebaseReady = FIREBASE_CONFIG.apiKey !== 'YOUR_FIREBASE_API_KEY' && FIREBASE_CONFIG.projectId !== 'YOUR_PROJECT_ID';
+const firebaseApp = _firebaseReady ? firebase.initializeApp(FIREBASE_CONFIG) : null;
+const db = _firebaseReady ? firebase.firestore(firebaseApp) : null;
+const stateDocRef = db ? db.collection('budget_state').doc(STATE_DOC_ID) : null;
 window.db = db;
+window.stateDocRef = stateDocRef;
 
-/** Carga el estado desde Supabase. Retorna true si tuvo éxito. */
-async function loadFromSupabase() {
-  if (!db) return false;
+/** Carga el estado desde Firebase. Retorna true si tuvo éxito. */
+async function loadFromFirebase() {
+  if (!stateDocRef) return false;
   try {
-    const { data, error } = await db
-      .from('budget_state')
-      .select('data')
-      .eq('id', STATE_ROW_ID)
-      .single();
-    if (error || !data?.data) return false;
-    // Mezclar: el estado remoto gana, pero preservamos editingSourceId local
-    const remote = data.data;
+    const snap = await stateDocRef.get();
+    if (!snap.exists) return false;
+    const payload = snap.data();
+    const remote = payload?.data;
+    if (!remote) return false;
     Object.assign(state, remote, { editingSourceId: null });
     if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
     // Sincronizar también en localStorage como caché offline
     localStorage.setItem('budget_state', JSON.stringify(state));
     return true;
   } catch (err) {
-    console.warn('BudgetFlow: no se pudo cargar desde Supabase, usando localStorage.', err);
+    console.warn('BudgetFlow: no se pudo cargar desde Firebase, usando localStorage.', err);
     return false;
   }
 }
@@ -82,14 +88,9 @@ async function loadFromSupabase() {
 /** Suscripción real-time: actualiza la UI cuando otro dispositivo guarda cambios. */
 function setupRealtime() {
   if (!db) return;
-  db.channel('budget-sync')
-    .on('postgres_changes', {
-      event:  'UPDATE',
-      schema: 'public',
-      table:  'budget_state',
-      filter: `id=eq.${STATE_ROW_ID}`
-    }, (payload) => {
-      const remote = payload.new?.data;
+  stateDocRef.onSnapshot((snap) => {
+      if (!snap.exists) return;
+      const remote = snap.data()?.data;
       if (!remote) return;
       // Ignorar si el update lo generó este mismo dispositivo
       if (remote._deviceId === _deviceId) return;
@@ -97,8 +98,9 @@ function setupRealtime() {
       localStorage.setItem('budget_state', JSON.stringify(state));
       renderOnly();
       toast('🔄 Sincronizado con otro dispositivo');
-    })
-    .subscribe();
+    }, (error) => {
+      console.warn('BudgetFlow: realtime de Firebase no disponible.', error);
+    });
 }
 
 /* ============================================================
@@ -115,16 +117,15 @@ const fmt   = (iso) => { if (!iso) return '—'; const [y,m,d] = iso.split('-');
 // ID único por pestaña/dispositivo — se regenera con cada recarga
 const _deviceId = Math.random().toString(36).slice(2, 8);
 
-/** Guarda en localStorage (inmediato) y en Supabase (async, sin bloquear). */
+/** Guarda en localStorage (inmediato) y en Firebase (async, sin bloquear). */
 function save() {
   localStorage.setItem('budget_state', JSON.stringify(state));
-  if (!db) return;
+  if (!stateDocRef) return;
   const payload = { ...state, _deviceId };
-  db.from('budget_state')
-    .update({ data: payload, updated_at: new Date().toISOString() })
-    .eq('id', STATE_ROW_ID)
-    .then(({ error }) => {
-      if (error) console.error('BudgetFlow: error al sincronizar con Supabase:', error);
+  stateDocRef
+    .set({ data: payload, updatedAt: new Date().toISOString() }, { merge: true })
+    .catch((error) => {
+      console.error('BudgetFlow: error al sincronizar con Firebase:', error);
     });
 }
 
@@ -1262,7 +1263,7 @@ function renderCatSummary() {
 }
 
 /* ============================================================
-   INIT  (async: carga Supabase primero, localStorage como fallback)
+   INIT  (async: carga Firebase primero, localStorage como fallback)
    Envuelto en Auth.init para protección por contraseña.
    ============================================================ */
 
@@ -1295,10 +1296,10 @@ function _startApp() {
 }
 
 (async () => {
-  const fromCloud = await loadFromSupabase();
-  if (!fromCloud && !_supabaseReady) {
+  const fromCloud = await loadFromFirebase();
+  if (!fromCloud && !_firebaseReady) {
     console.info(
-      '%cBudgetFlow: Supabase no configurado.\nEdita SUPABASE_URL y SUPABASE_KEY en app.js para activar la sincronización entre dispositivos.',
+      '%cBudgetFlow: Firebase no configurado.\nEdita FIREBASE_CONFIG en app.js para activar la sincronización entre dispositivos.',
       'color:#f59e0b;font-weight:bold'
     );
   }

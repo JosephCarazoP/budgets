@@ -35,17 +35,13 @@ function getSession() {
 function setSession(token, expiresAt) { localStorage.setItem(SESSION_KEY, JSON.stringify({ token, expiresAt })); }
 function clearSession() { localStorage.removeItem(SESSION_KEY); }
 
-/* ---- Cloud sync helpers (Supabase row budget_state/default) ---- */
+/* ---- Cloud sync helpers (Firebase doc budget_state/default) ---- */
 async function pullAuthCfgFromCloud() {
-  if (!window.db || !window.STATE_ROW_ID) return null;
+  if (!window.db || !window.STATE_DOC_ID) return null;
   try {
-    const { data, error } = await window.db
-      .from('budget_state')
-      .select('data')
-      .eq('id', window.STATE_ROW_ID)
-      .single();
-    if (error) return null;
-    return data?.data?._authCfg || null;
+    const snap = await window.stateDocRef.get();
+    if (!snap.exists) return null;
+    return snap.data()?.data?._authCfg || null;
   } catch {
     return null;
   }
@@ -58,21 +54,14 @@ function isCfgNewer(a, b) {
 }
 
 async function pushAuthCfgToCloud(cfg) {
-  if (!window.db || !window.STATE_ROW_ID) return;
+  if (!window.db || !window.STATE_DOC_ID) return;
   try {
-    const { data, error } = await window.db
-      .from('budget_state')
-      .select('data')
-      .eq('id', window.STATE_ROW_ID)
-      .single();
-    if (error || !data?.data) return;
-    const merged = { ...data.data };
+    const snap = await window.stateDocRef.get();
+    const currentData = snap.exists ? (snap.data()?.data || {}) : {};
+    const merged = { ...currentData };
     if (cfg) merged._authCfg = cfg;
     else delete merged._authCfg;
-    await window.db
-      .from('budget_state')
-      .update({ data: merged, updated_at: new Date().toISOString() })
-      .eq('id', window.STATE_ROW_ID);
+    await window.stateDocRef.set({ data: merged, updatedAt: new Date().toISOString() }, { merge: true });
   } catch {
     // No bloquear la UX por fallos de red
   }
@@ -198,15 +187,9 @@ const Auth = {
 
   _authChannel: null,
   _startAuthRealtimeSync() {
-    if (!window.db || !window.STATE_ROW_ID || Auth._authChannel) return;
-    Auth._authChannel = window.db.channel('budget-auth-sync')
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'budget_state',
-        filter: `id=eq.${window.STATE_ROW_ID}`
-      }, async (payload) => {
-        const remoteCfg = payload.new?.data?._authCfg || null;
+    if (!window.stateDocRef || Auth._authChannel) return;
+    Auth._authChannel = window.stateDocRef.onSnapshot(async (snap) => {
+        const remoteCfg = snap.data()?.data?._authCfg || null;
         const localCfg = getAuthCfg();
         if (!remoteCfg?.hash) return;
         if (!localCfg || isCfgNewer(remoteCfg, localCfg)) {
@@ -216,8 +199,7 @@ const Auth = {
           Auth.showLock();
           if (window.toast) toast('🔐 Seguridad actualizada. Vuelve a iniciar sesión.');
         }
-      })
-      .subscribe();
+      }, () => {});
   },
 
   showLock() { Auth._renderOverlay('lock'); },
