@@ -719,9 +719,9 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 .expense-table-header {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
-  padding: .5rem 1.25rem;
-  font-size: .72rem;
+  grid-template-columns: minmax(160px, 2fr) minmax(115px, 1fr) minmax(115px, 1fr) minmax(90px, .8fr) 76px auto;
+  padding: .42rem .9rem;
+  font-size: .68rem;
   font-weight: 600;
   color: var(--text-3);
   text-transform: uppercase;
@@ -731,43 +731,43 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 .expense-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr auto auto;
-  padding: .75rem 1.25rem;
+  grid-template-columns: minmax(160px, 2fr) minmax(115px, 1fr) minmax(115px, 1fr) minmax(90px, .8fr) 76px auto;
+  padding: .48rem .9rem;
   border-bottom: 1px solid var(--border);
   align-items: center;
   transition: background .1s;
-  gap: .5rem;
+  gap: .4rem;
 }
 
 .expense-row:last-child { border-bottom: none; }
 .expense-row:hover { background: var(--bg-alt); }
 
-.exp-desc { font-size: .875rem; font-weight: 500; }
+.exp-desc { font-size: .82rem; font-weight: 500; line-height: 1.25; }
 .exp-sub  { font-size: .72rem; color: var(--text-3); margin-top: .1rem; }
-.exp-amount { font-size: .875rem; font-weight: 700; color: var(--danger); }
+.exp-amount { font-size: .82rem; font-weight: 700; color: var(--danger); }
 .exp-tag  {
   display: inline-flex; align-items: center; gap: .3rem;
-  font-size: .75rem; font-weight: 500;
-  padding: .2rem .55rem; border-radius: 6px;
+  font-size: .7rem; font-weight: 500;
+  padding: .14rem .45rem; border-radius: 6px;
   background: var(--bg-alt); color: var(--text-2);
 }
-.exp-date { font-size: .78rem; color: var(--text-3); }
+.exp-date { font-size: .72rem; color: var(--text-3); }
 
 .expense-actions {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: .45rem;
+  gap: .3rem;
 }
 
 .expense-action-btn {
   border: 1px solid var(--border);
   background: var(--bg-alt);
   color: var(--text-2);
-  font-size: .74rem;
+  font-size: .68rem;
   font-weight: 600;
   border-radius: 999px;
-  padding: .26rem .62rem;
+  padding: .18rem .48rem;
   line-height: 1.2;
   cursor: pointer;
   transition: background .15s, border-color .15s, color .15s;
@@ -1391,7 +1391,8 @@ details[open] > summary::before { transform: rotate(90deg); }
   .expense-row {
     grid-template-columns: 1fr auto;
     grid-template-rows: auto auto;
-    gap: .25rem;
+    gap: .2rem .35rem;
+    padding: .55rem .75rem;
   }
   .expense-actions {
     justify-content: flex-start;

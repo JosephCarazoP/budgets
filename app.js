@@ -48,6 +48,47 @@ function rebuildDistributionsFromAssignments() {
   });
 }
 
+function reconcileAssignmentsWithDistributions() {
+  if (!state.assignments.length) return false;
+
+  let changed = false;
+  state.sources.forEach((source) => {
+    const distribution = source.distribution || {};
+    const assignmentTotals = {};
+
+    state.assignments
+      .filter((a) => a.sourceId === source.id)
+      .forEach((a) => {
+        assignmentTotals[a.category] = (assignmentTotals[a.category] || 0) + Number(a.amount || 0);
+      });
+
+    const categories = new Set([...Object.keys(distribution), ...Object.keys(assignmentTotals)]);
+    const hasMismatch = [...categories].some((category) => (
+      Math.abs(Number(distribution[category] || 0) - Number(assignmentTotals[category] || 0)) > 0.009
+    ));
+
+    if (!hasMismatch) return;
+
+    changed = true;
+    state.assignments = state.assignments.filter((a) => a.sourceId !== source.id);
+    Object.entries(distribution).forEach(([category, amount]) => {
+      const numericAmount = Number(amount || 0);
+      if (numericAmount > 0) {
+        state.assignments.push({
+          id: uid(),
+          sourceId: source.id,
+          category,
+          amount: numericAmount,
+          date: new Date().toISOString().slice(0, 10)
+        });
+      }
+    });
+  });
+
+  if (changed) rebuildDistributionsFromAssignments();
+  return changed;
+}
+
 /* ============================================================
    SUPABASE CLIENT
    ============================================================ */
@@ -70,6 +111,7 @@ async function loadFromSupabase() {
     const remote = data.data;
     Object.assign(state, remote, { editingSourceId: null });
     if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+    if (!Array.isArray(state.assignments)) state.assignments = [];
     // Sincronizar también en localStorage como caché offline
     localStorage.setItem('budget_state', JSON.stringify(state));
     return true;
@@ -94,6 +136,9 @@ function setupRealtime() {
       // Ignorar si el update lo generó este mismo dispositivo
       if (remote._deviceId === _deviceId) return;
       Object.assign(state, remote, { editingSourceId: state.editingSourceId });
+      if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+      if (!Array.isArray(state.assignments)) state.assignments = [];
+      reconcileAssignmentsWithDistributions();
       localStorage.setItem('budget_state', JSON.stringify(state));
       renderOnly();
       toast('🔄 Sincronizado con otro dispositivo');
@@ -111,6 +156,11 @@ const $$ = (sel, ctx = document) => ctx.querySelectorAll(sel);
 const money = (n) => `₡${Number(n || 0).toLocaleString('es-CR', { maximumFractionDigits: 2 })}`;
 const uid   = () => Math.random().toString(36).slice(2, 10);
 const fmt   = (iso) => { if (!iso) return '—'; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
+const compareByDateDesc = (a, b) => {
+  const dateA = String(a?.date || '0000-00-00');
+  const dateB = String(b?.date || '0000-00-00');
+  return dateB.localeCompare(dateA);
+};
 
 // ID único por pestaña/dispositivo — se regenera con cada recarga
 const _deviceId = Math.random().toString(36).slice(2, 8);
@@ -184,6 +234,24 @@ function categoryMap() {
   return map;
 }
 
+function reduceAssignments(sourceId, category, amount) {
+  let pending = Number(amount || 0);
+  const assignments = state.assignments
+    .filter((a) => a.sourceId === sourceId && a.category === category)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+  assignments.forEach((assignment) => {
+    if (pending <= 0) return;
+    const current = Number(assignment.amount || 0);
+    const moved = Math.min(current, pending);
+    assignment.amount = current - moved;
+    pending -= moved;
+  });
+
+  state.assignments = state.assignments.filter((a) => Number(a.amount || 0) > 0.009);
+  return Number(amount || 0) - pending;
+}
+
 function moveRemainingBudget(sourceId, fromCategory) {
   const source = state.sources.find((s) => s.id === sourceId);
   if (!source) return;
@@ -248,18 +316,22 @@ function moveRemainingBudget(sourceId, fromCategory) {
       return;
     }
 
-    const dist = { ...(source.distribution || {}) };
-    dist[fromCategory] = Math.max(0, Number(dist[fromCategory] || 0) - amount);
-    if (dist[fromCategory] === 0) delete dist[fromCategory];
+    const moved = reduceAssignments(sourceId, fromCategory, amount);
+    if (Math.abs(moved - amount) > 0.009) {
+      toast('⚠️ No se pudo encontrar toda la asignación a mover');
+      rebuildDistributionsFromAssignments();
+      renderAll();
+      return;
+    }
 
     if (target !== '__unassigned__') {
-      dist[target] = Number(dist[target] || 0) + amount;
+      state.assignments.push({ id: uid(), sourceId, category: target, amount, date: new Date().toISOString().slice(0, 10) });
       toast(`Reasignado ${money(amount)} de ${fromCategory} a ${target}`);
     } else {
       toast(`Movido ${money(amount)} de ${fromCategory} a "Sin asignar"`);
     }
 
-    source.distribution = dist;
+    rebuildDistributionsFromAssignments();
     overlay.style.display = 'none';
     renderAll();
   });
@@ -404,7 +476,7 @@ function renderCharts() {
    ============================================================ */
 
 function renderRecentExpenses() {
-  const recent = [...state.expenses].sort((a, b) => b.date?.localeCompare(a.date)).slice(0, 5);
+  const recent = [...state.expenses].sort(compareByDateDesc).slice(0, 5);
   const el     = $('recent-expenses-list');
 
   if (!recent.length) {
@@ -738,7 +810,7 @@ function renderExpensesList() {
   const filterSrc = $('filter-source').value;
   const filterCat = $('filter-category').value;
 
-  let list = [...state.expenses].sort((a, b) => b.date?.localeCompare(a.date));
+  let list = [...state.expenses].sort(compareByDateDesc);
   if (filterSrc) list = list.filter((e) => e.sourceId === filterSrc);
   if (filterCat) list = list.filter((e) => e.category === filterCat);
 
@@ -1304,6 +1376,7 @@ function _startApp() {
   }
   setupRealtime();
   migrateAssignmentsIfNeeded();
+  reconcileAssignmentsWithDistributions();
   rebuildDistributionsFromAssignments();
   applyTheme();   // Aplicar tema antes del overlay de auth
 
