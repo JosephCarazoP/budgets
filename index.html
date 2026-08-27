@@ -4,13 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>BudgetFlow — Gestor de presupuestos</title>
-  <!-- Web App Manifest (necesario para Home Screen en iOS) -->
+  <!-- Web App Manifest (para escritorio y móviles) -->
   <link rel="manifest" href="/manifest.json" />
   <!-- iOS específico -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="BudgetFlow" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2318181b'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-size='18' font-family='system-ui' fill='white'%3E₡%3C/text%3E%3C/svg%3E" />
+  <link rel="icon" type="image/svg+xml" href="icons/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
@@ -23,10 +26,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo">
-        <svg width="26" height="26" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="32" height="32" rx="7" fill="#18181b"/>
-          <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="17" font-family="system-ui,sans-serif" fill="white">₡</text>
-        </svg>
+        <img src="icons/icon-192.png" width="28" height="28" alt="BudgetFlow" style="border-radius:7px;object-fit:cover;box-shadow:0 2px 6px rgba(0,0,0,0.3)" />
         <span>BudgetFlow</span>
       </div>
     </div>
@@ -67,10 +67,7 @@
     <!-- TOPBAR (mobile) -->
     <header class="topbar">
       <div class="logo">
-        <svg width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect width="32" height="32" rx="7" fill="#18181b"/>
-          <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-size="17" font-family="system-ui,sans-serif" fill="white">₡</text>
-        </svg>
+        <img src="icons/icon-192.png" width="24" height="24" alt="BudgetFlow" style="border-radius:6px;object-fit:cover" />
         BudgetFlow
       </div>
       <button id="theme-toggle-mobile" class="icon-btn">
@@ -391,6 +388,12 @@
       <div id="security-modal-body"></div>
     </div>
   </div>
+
+  <!-- Firebase App, Auth & Firestore -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="auth.js"></script>

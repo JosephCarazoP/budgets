@@ -165,8 +165,15 @@ const compareByDateDesc = (a, b) => {
 // ID único por pestaña/dispositivo — se regenera con cada recarga
 const _deviceId = Math.random().toString(36).slice(2, 8);
 
-/** Guarda en localStorage (inmediato) y en Supabase (async, sin bloquear). */
+/** Guarda en localStorage y en Firestore (por usuario) o Supabase (fallback). */
 function save() {
+  if (window.FBAuth && window.FBAuth.isConfigured() && window.FBAuth.currentUser) {
+    const uid = window.FBAuth.currentUser.uid;
+    localStorage.setItem('budget_state_' + uid, JSON.stringify(state));
+    window.FBAuth.saveUserState(uid, { ...state, _deviceId });
+    return;
+  }
+
   localStorage.setItem('budget_state', JSON.stringify(state));
   if (!db) return;
   const payload = { ...state, _deviceId };
@@ -1366,21 +1373,58 @@ function _startApp() {
   switchTab('dashboard');
 }
 
-(async () => {
-  const fromCloud = await loadFromSupabase();
-  if (!fromCloud && !_supabaseReady) {
-    console.info(
-      '%cBudgetFlow: Supabase no configurado.\nEdita SUPABASE_URL y SUPABASE_KEY en app.js para activar la sincronización entre dispositivos.',
-      'color:#f59e0b;font-weight:bold'
-    );
+async function initAppData() {
+  if (window.FBAuth && window.FBAuth.isConfigured()) {
+    const fbUser = window.FBAuth.currentUser;
+    if (fbUser) {
+      try {
+        const remoteState = await window.FBAuth.loadUserState(fbUser.uid);
+        if (remoteState) {
+          Object.assign(state, remoteState, { editingSourceId: null });
+        } else {
+          const cached = localStorage.getItem('budget_state_' + fbUser.uid);
+          if (cached) Object.assign(state, JSON.parse(cached), { editingSourceId: null });
+        }
+      } catch (err) {
+        console.warn('Error cargando de Firestore, usando caché local:', err);
+      }
+
+      window.FBAuth.subscribeToUserState(fbUser.uid, (remote) => {
+        if (!remote || remote._deviceId === _deviceId) return;
+        Object.assign(state, remote, { editingSourceId: state.editingSourceId });
+        if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+        if (!Array.isArray(state.assignments)) state.assignments = [];
+        reconcileAssignmentsWithDistributions();
+        renderOnly();
+        toast('🔄 Sincronizado con Firestore');
+      });
+    } else {
+      await loadFromSupabase();
+      setupRealtime();
+    }
+  } else {
+    await loadFromSupabase();
+    setupRealtime();
   }
-  setupRealtime();
+
   migrateAssignmentsIfNeeded();
   reconcileAssignmentsWithDistributions();
   rebuildDistributionsFromAssignments();
-  applyTheme();   // Aplicar tema antes del overlay de auth
+}
 
-  await Auth.init(() => {
+(async () => {
+  applyTheme();
+
+  if (window.FBAuth) {
+    try {
+      await window.FBAuth.init();
+    } catch (e) {
+      console.warn('Error inicializando FBAuth:', e);
+    }
+  }
+
+  await Auth.init(async () => {
+    await initAppData();
     _startApp();
   });
 })();

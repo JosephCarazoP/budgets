@@ -1,39 +1,91 @@
 'use strict';
 
 /* ============================================================
-   BUDGETFLOW — AUTH MODULE  (Supabase edition)
+   BUDGETFLOW — ADVANCED AUTH & SECURITY MODULE
    
-   La configuración de la contraseña (hash, expiración) se
-   guarda en Supabase → tabla budget_state, campo auth_cfg.
-   Así es la misma en todos los dispositivos.
-
-   La sesión "Recordarme" sigue siendo local (localStorage)
-   porque es intencional: cada dispositivo decide si recordar.
-
-   Seguridad:
-   - La contraseña se hashea con SHA-256 (Web Crypto API).
-   - NUNCA se guarda la contraseña en texto plano.
-   - El token de sesión local se deriva del hash+createdAt
-     guardado en Supabase, por lo que cambiar la contraseña
-     invalida todas las sesiones guardadas automáticamente.
+   Mejoras de Seguridad Implementadas:
+   1. Criptografía Robusta:
+      - Derivación PBKDF2 con 100,000 iteraciones (SHA-256) y salt
+        aleatorio de 16 bytes mediante Web Crypto API.
+      - NUNCA se almacena la contraseña en texto plano ni con
+        SHA-256 simple sin sal.
+      - Migración transparente y automática de hashes antiguos.
+   2. Protección contra Fuerza Bruta:
+      - Rate limiting progresivo tras 3 intentos.
+      - Bloqueo temporal estricto (Lockout de 60s) tras 5 intentos
+        con temporizador en pantalla persistente entre recargas.
+   3. Tokens de Sesión Inviolables:
+      - Generación de secreto local único por dispositivo (CSPRNG).
+      - El token no puede ser forjado por quien lea la base de datos.
+   4. Temporizador de Auto-bloqueo por Inactividad:
+      - Monitoreo global de actividad de usuario (mouse, teclado, touch).
+      - Bloqueo automático configurable (5m, 15m, 30m, 1h o off).
    ============================================================ */
 
-const SESSION_KEY = 'bf_auth_ses';   // Solo la sesión es local
+const SESSION_KEY       = 'bf_auth_ses';
+const DEVICE_SEC_KEY    = 'bf_dev_sec';
+const AUTOLOCK_KEY      = 'bf_autolock_min';
+const LOCKOUT_KEY       = 'bf_lockout_until';
+const FAILS_KEY         = 'bf_fail_attempts';
 
-/* ---- Helpers ---- */
+/* ---- Crypto Helpers ---- */
+
+function now()      { return Date.now(); }
+function daysMs(d)  { return d * 86_400_000; }
+
+/** Genera un Salt aleatorio en formato hexadecimal (16 bytes = 32 caracteres hex) */
+function generateSalt() {
+  const buf = new Uint8Array(16);
+  crypto.getRandomValues(buf);
+  return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** SHA-256 plano (mantenido solo para compatibilidad y migración) */
 async function sha256(text) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function now()      { return Date.now(); }
-function daysMs(d)  { return d * 86_400_000; }
-
 /**
- * Espera hasta que window.db y window.STATE_ROW_ID estén listos (máx maxMs ms).
- * Esto evita que en un dispositivo nuevo se muestre "Crear contraseña" cuando
- * en realidad la contraseña ya existe en Supabase pero db aún no se inicializó.
+ * Derivación de clave mediante PBKDF2 nativo de Web Crypto API.
+ * 100,000 iteraciones de SHA-256 con salt criptográfico.
  */
+async function pbkdf2(password, saltHex, iterations = 100000) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const saltBytes = new Uint8Array(saltHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: saltBytes,
+      iterations: iterations,
+      hash: 'SHA-256'
+    },
+    keyMaterial,
+    256
+  );
+  return Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Obtiene o genera un secreto criptográfico exclusivo de este dispositivo */
+function getDeviceSecret() {
+  let s = localStorage.getItem(DEVICE_SEC_KEY);
+  if (!s) {
+    const buf = new Uint8Array(24);
+    crypto.getRandomValues(buf);
+    s = Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem(DEVICE_SEC_KEY, s);
+  }
+  return s;
+}
+
+/** Espera hasta que window.db y window.STATE_ROW_ID estén listos */
 async function waitForDb(maxMs = 4000, intervalMs = 80) {
   const deadline = Date.now() + maxMs;
   while (Date.now() < deadline) {
@@ -43,20 +95,12 @@ async function waitForDb(maxMs = 4000, intervalMs = 80) {
   return !!(window.db && window.STATE_ROW_ID);
 }
 
-/* ---- Supabase: leer y escribir auth_cfg ---- */
+/* ---- Supabase Storage for auth_cfg ---- */
 
-/**
- * Lee auth_cfg desde Supabase.
- * Retorna el objeto { hash, createdAt, expiresAt, durationDays } o null.
- * Usa la instancia `db` y la constante `STATE_ROW_ID` definidas en app.js.
- */
 async function _getAuthCfg() {
   await waitForDb();
   if (!window.db || !window.STATE_ROW_ID) return null;
   try {
-    // Intentar leer ambos campos a la vez para soportar ambas versiones del schema.
-    // Si auth_cfg (columna dedicada) existe y tiene valor, la usamos.
-    // Si no, intentamos data._authCfg (versión anterior embebida en el JSON de estado).
     const { data, error } = await window.db
       .from('budget_state')
       .select('data, auth_cfg')
@@ -64,24 +108,19 @@ async function _getAuthCfg() {
       .single();
     if (error || !data) return null;
 
-    // Columna dedicada (versión nueva)
     if (data.auth_cfg?.hash) return data.auth_cfg;
 
-    // Fallback: embebido en data JSON (versión anterior)
     const legacy = data?.data?._authCfg;
     if (legacy?.hash) {
-      // Migrar silenciosamente a columna dedicada para que otros dispositivos la vean
       _setAuthCfgDirect(legacy).catch(() => {});
       return legacy;
     }
-
     return null;
   } catch {
     return null;
   }
 }
 
-/** Escribe en la columna auth_cfg. Separado para evitar recursión en migración. */
 async function _setAuthCfgDirect(cfg) {
   if (!window.db || !window.STATE_ROW_ID) return;
   try {
@@ -89,28 +128,22 @@ async function _setAuthCfgDirect(cfg) {
       .from('budget_state')
       .update({ auth_cfg: cfg })
       .eq('id', window.STATE_ROW_ID);
-  } catch { /* ignorar si la columna no existe aún */ }
+  } catch { /* ignorar */ }
 }
 
-/**
- * Guarda auth_cfg en Supabase.
- * Si cfg es null, borra la protección.
- */
 async function _setAuthCfg(cfg) {
   await waitForDb();
   if (!window.db || !window.STATE_ROW_ID) return;
 
-  // Guardar en columna dedicada (si existe en el schema)
   await _setAuthCfgDirect(cfg);
 
-  // También actualizar data._authCfg para compatibilidad hacia atrás
   try {
-    const { data, error } = await window.db
+    const { data } = await window.db
       .from('budget_state')
       .select('data')
       .eq('id', window.STATE_ROW_ID)
       .single();
-    if (error || !data?.data) return;
+    if (!data?.data) return;
     const merged = { ...data.data };
     if (cfg) merged._authCfg = cfg;
     else delete merged._authCfg;
@@ -118,29 +151,55 @@ async function _setAuthCfg(cfg) {
       .from('budget_state')
       .update({ data: merged })
       .eq('id', window.STATE_ROW_ID);
-  } catch { /* no bloquear si falla */ }
+  } catch { /* no bloquear */ }
 }
 
-/* ---- Sesión local (Recordarme, por dispositivo) ---- */
-function getSession()                       { try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch { return null; } }
-function setSession(token, expiresAt)       { localStorage.setItem(SESSION_KEY, JSON.stringify({ token, expiresAt })); }
-function clearSession()                     { localStorage.removeItem(SESSION_KEY); }
+/* ---- Sesión local segura ---- */
+function getSession()                 { try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch { return null; } }
+function setSession(token, expiresAt) { localStorage.setItem(SESSION_KEY, JSON.stringify({ token, expiresAt })); }
+function clearSession()               { localStorage.removeItem(SESSION_KEY); }
 
-/* ---- Public API ---- */
+/* ---- Rate Limiting y Protección de Fuerza Bruta ---- */
+function getLockoutRemainingSec() {
+  const until = parseInt(sessionStorage.getItem(LOCKOUT_KEY) || '0', 10);
+  const diff = until - now();
+  return diff > 0 ? Math.ceil(diff / 1000) : 0;
+}
+
+function recordFailedAttempt() {
+  let fails = parseInt(sessionStorage.getItem(FAILS_KEY) || '0', 10) + 1;
+  sessionStorage.setItem(FAILS_KEY, fails);
+  if (fails >= 5) {
+    sessionStorage.setItem(LOCKOUT_KEY, now() + 60000); // 60 segundos de bloqueo
+  }
+  return fails;
+}
+
+function resetFailedAttempts() {
+  sessionStorage.removeItem(FAILS_KEY);
+  sessionStorage.removeItem(LOCKOUT_KEY);
+}
+
+/* ============================================================
+   PUBLIC AUTH API
+   ============================================================ */
+
 const Auth = {
+  _cfg: undefined,
+  _onUnlocked: null,
+  _lastActivity: now(),
+  _inactivityTimer: null,
+  _isLocked: false,
 
-  /** Cache en memoria para no consultar Supabase en cada operación de la misma sesión. */
-  _cfg: undefined,   // undefined = no cargado aún; null = sin contraseña; object = configuración
-
-  /** Carga (o devuelve desde cache) la configuración. */
   async _loadCfg() {
     if (Auth._cfg !== undefined) return Auth._cfg;
     Auth._cfg = await _getAuthCfg();
     return Auth._cfg;
   },
 
-  /** Invalida el cache (tras cambiar/eliminar contraseña). */
-  _invalidateCfg() { Auth._cfg = undefined; },
+  _invalidateCfg() {
+    Auth._cfg = undefined;
+  },
 
   /* ---- Estado ---- */
 
@@ -171,73 +230,180 @@ const Auth = {
     return cfg?.durationDays || 30;
   },
 
+  /* ---- Temporizador de Auto-bloqueo por Inactividad ---- */
+
+  getAutoLockMinutes() {
+    const v = localStorage.getItem(AUTOLOCK_KEY);
+    return v !== null ? parseInt(v, 10) : 15; // 15 minutos por defecto
+  },
+
+  setAutoLockMinutes(minutes) {
+    localStorage.setItem(AUTOLOCK_KEY, minutes);
+    Auth.recordActivity();
+  },
+
+  recordActivity() {
+    Auth._lastActivity = now();
+  },
+
+  _initInactivityTracker() {
+    if (Auth._inactivityTimer) clearInterval(Auth._inactivityTimer);
+
+    // Eventos que indican actividad real del usuario
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    let lastDebounce = 0;
+    const onUserAction = () => {
+      const t = now();
+      if (t - lastDebounce > 3000) {
+        lastDebounce = t;
+        Auth.recordActivity();
+      }
+    };
+
+    events.forEach(evt => window.addEventListener(evt, onUserAction, { passive: true }));
+
+    // Al volver a la pestaña tras estar en segundo plano
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        Auth._checkInactivity();
+      }
+    });
+
+    // Verificación periódica cada 10 segundos
+    Auth._inactivityTimer = setInterval(() => {
+      Auth._checkInactivity();
+    }, 10000);
+  },
+
+  _checkInactivity() {
+    if (Auth._isLocked) return;
+    const mins = Auth.getAutoLockMinutes();
+    if (mins <= 0) return; // 0 = desactivado
+
+    const elapsedMs = now() - Auth._lastActivity;
+    if (elapsedMs >= mins * 60 * 1000) {
+      Auth.lockByInactivity();
+    }
+  },
+
+  lockByInactivity() {
+    if (Auth._isLocked) return;
+    Auth.isConfigured().then(configured => {
+      if (!configured) return;
+      Auth._isLocked = true;
+      Auth._renderOverlay('lock_inactivity');
+    });
+  },
+
   /* ---- Sesión ---- */
 
-  /** ¿La sesión guardada en este dispositivo sigue siendo válida? */
+  /** Valida si el token local corresponde a la contraseña y no ha expirado */
   async isSessionValid() {
     const cfg = await Auth._loadCfg();
-    if (!cfg?.hash) return true;          // Sin contraseña → acceso libre
+    if (!cfg?.hash) return true; // Sin contraseña activa
     const ses = getSession();
     if (!ses) return false;
-    if (now() > ses.expiresAt) { clearSession(); return false; }
-    const expected = await sha256(cfg.hash + cfg.createdAt);
+    if (now() > ses.expiresAt) {
+      clearSession();
+      return false;
+    }
+
+    // Token seguro vinculado al secreto de dispositivo + hash actual
+    const devSec = getDeviceSecret();
+    const expected = await pbkdf2(cfg.hash + cfg.createdAt, devSec, 500);
     return ses.token === expected;
   },
 
-  /** Guarda una sesión "Recordarme" en este dispositivo. */
+  /** Guarda sesión local firmada */
   async createSession() {
     const cfg = await Auth._loadCfg();
     if (!cfg) return;
-    const token     = await sha256(cfg.hash + cfg.createdAt);
-    const expiresAt = cfg.expiresAt;
-    setSession(token, expiresAt);
+    const devSec = getDeviceSecret();
+    const token = await pbkdf2(cfg.hash + cfg.createdAt, devSec, 500);
+    setSession(token, cfg.expiresAt);
   },
 
-  /** Verifica la contraseña ingresada. */
+  /**
+   * Verifica la contraseña y migra hashes débiles automáticamente a PBKDF2 con Salt
+   */
   async verify(plain) {
     const cfg = await Auth._loadCfg();
     if (!cfg?.hash) return true;
-    return (await sha256(plain)) === cfg.hash;
+
+    // Caso 1: Esquema moderno PBKDF2 con Salt
+    if (cfg.salt) {
+      const computed = await pbkdf2(plain, cfg.salt, cfg.iterations || 100000);
+      return computed === cfg.hash;
+    }
+
+    // Caso 2: Esquema legacy SHA-256 plano -> migrar al validar
+    const legacy = await sha256(plain);
+    if (legacy === cfg.hash) {
+      try {
+        const newSalt = generateSalt();
+        const newHash = await pbkdf2(plain, newSalt, 100000);
+        const upgraded = {
+          ...cfg,
+          hash: newHash,
+          salt: newSalt,
+          iterations: 100000,
+          upgradedAt: now()
+        };
+        await _setAuthCfg(upgraded);
+        Auth._cfg = upgraded;
+      } catch (e) {
+        console.warn('No se pudo auto-migrar a PBKDF2:', e);
+      }
+      return true;
+    }
+
+    return false;
   },
 
-  /** Crea o cambia la contraseña. Guarda en Supabase e invalida sesiones locales. */
+  /** Establece una nueva contraseña con Salt y PBKDF2 */
   async setPassword(plain, durationDays) {
-    const hash      = await sha256(plain);
+    const salt = generateSalt();
+    const hash = await pbkdf2(plain, salt, 100000);
     const createdAt = now();
     const expiresAt = createdAt + daysMs(durationDays);
-    const cfg       = { hash, createdAt, expiresAt, durationDays };
+    const cfg = {
+      hash,
+      salt,
+      iterations: 100000,
+      createdAt,
+      expiresAt,
+      durationDays
+    };
+
     await _setAuthCfg(cfg);
-    Auth._cfg = cfg;           // Actualizar cache
-    clearSession();            // Forzar re-login en este dispositivo
+    Auth._cfg = cfg;
+    clearSession();
+    resetFailedAttempts();
   },
 
-  /** Elimina la contraseña de todos los dispositivos. */
   async removePassword() {
     await _setAuthCfg(null);
     Auth._cfg = null;
     clearSession();
+    resetFailedAttempts();
   },
 
-  /** Cierra sesión en este dispositivo. */
-  logout() { clearSession(); Auth._cfg = undefined; Auth.showLock(); },
+  logout() {
+    clearSession();
+    Auth._cfg = undefined;
+    Auth.showLock();
+  },
 
   /* ================================================================
      UI
      ================================================================ */
 
-  /** Punto de entrada. Llama esto antes de mostrar la app. */
   async init(onUnlocked) {
     Auth._onUnlocked = onUnlocked;
+    Auth._initInactivityTracker();
 
-    // Mostrar spinner mientras esperamos a Supabase.
-    // Sin esto, un dispositivo nuevo flashea "Crear contraseña" antes de saber
-    // si ya hay una contraseña configurada en otro dispositivo.
     Auth._showLoadingOverlay();
-
-    // _loadCfg ya llama waitForDb internamente, así que esto bloquea
-    // hasta que la nube responda (o se agote el tiempo).
     const configured = await Auth.isConfigured();
-
     Auth._removeLoadingOverlay();
 
     if (!configured) {
@@ -258,9 +424,11 @@ const Auth = {
     Auth.showLock();
   },
 
-  showLock() { Auth._renderOverlay('lock'); },
+  showLock() {
+    Auth._isLocked = true;
+    Auth._renderOverlay('lock');
+  },
 
-  /* ---- Loading overlay (spinner mientras se conecta con Supabase) ---- */
   _showLoadingOverlay() {
     if (document.getElementById('auth-overlay')) return;
     const el = document.createElement('div');
@@ -269,11 +437,7 @@ const Auth = {
     el.innerHTML = `
       <div class="auth-card" style="align-items:center;gap:1.5rem;padding:2.5rem 2rem">
         <div class="auth-logo">
-          <svg width="36" height="36" viewBox="0 0 32 32" fill="none">
-            <rect width="32" height="32" rx="7" fill="#18181b"/>
-            <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle"
-              font-size="17" font-family="system-ui,sans-serif" fill="white">₡</text>
-          </svg>
+          <img src="icons/icon-192.png" width="40" height="40" alt="BudgetFlow" style="border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,0.3)" />
           <span class="auth-logo-name">BudgetFlow</span>
         </div>
         <div style="display:flex;align-items:center;gap:.6rem;color:var(--text-secondary,#71717a);font-size:.875rem">
@@ -281,45 +445,48 @@ const Auth = {
             style="animation:auth-spin 1s linear infinite;flex-shrink:0">
             <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
           </svg>
-          Conectando…
+          Conectando de forma segura…
         </div>
       </div>`;
     document.body.appendChild(el);
   },
 
   _removeLoadingOverlay() {
-    const el = document.getElementById('auth-overlay');
-    if (el) el.remove();
+    document.getElementById('auth-overlay')?.remove();
   },
 
   _unlock() {
+    Auth._isLocked = false;
+    Auth.recordActivity();
+    resetFailedAttempts();
+
     const overlay = document.getElementById('auth-overlay');
     if (overlay) {
       overlay.classList.add('auth-fade-out');
       setTimeout(() => overlay.remove(), 320);
     }
     if (Auth._onUnlocked) Auth._onUnlocked();
+
     Auth.needsRenewalWarning().then(warn => {
       if (warn) {
         Auth.expiresInDays().then(d => {
           setTimeout(() => {
-            if (window.toast) toast(`⚠️ Tu contraseña vence en ${d} día${d !== 1 ? 's' : ''}. Cámbiala en Ajustes.`, 5000);
+            if (window.toast) toast(`⚠️ Tu contraseña vence en ${d} día${d !== 1 ? 's' : ''}. Cámbiala en Ajustes de Seguridad.`, 5000);
           }, 1200);
         });
       }
     });
   },
 
-  _showSetup()   { Auth._renderOverlay('setup');   },
-  _showExpired() { Auth._renderOverlay('expired'); },
+  _showSetup()   { Auth._isLocked = true; Auth._renderOverlay('setup');   },
+  _showExpired() { Auth._isLocked = true; Auth._renderOverlay('expired'); },
 
-  /* ---- Overlay renderer ---- */
   _renderOverlay(mode) {
     document.getElementById('auth-overlay')?.remove();
 
-    const el      = document.createElement('div');
-    el.id         = 'auth-overlay';
-    el.className  = 'auth-overlay';
+    const el = document.createElement('div');
+    el.id = 'auth-overlay';
+    el.className = 'auth-overlay';
 
     const DURATION_OPTIONS = [
       { value: 15,  label: '15 días' },
@@ -339,22 +506,20 @@ const Auth = {
 
     const logo = `
       <div class="auth-logo">
-        <svg width="36" height="36" viewBox="0 0 32 32" fill="none">
-          <rect width="32" height="32" rx="7" fill="#18181b"/>
-          <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle"
-            font-size="17" font-family="system-ui,sans-serif" fill="white">₡</text>
-        </svg>
+        <img src="icons/icon-192.png" width="40" height="40" alt="BudgetFlow" style="border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,0.3)" />
         <span class="auth-logo-name">BudgetFlow</span>
       </div>`;
 
-    if (mode === 'lock') {
+    if (mode === 'lock' || mode === 'lock_inactivity') {
+      const isInactivity = mode === 'lock_inactivity';
       el.innerHTML = `
         <div class="auth-card">
           ${logo}
           <div class="auth-heading">
-            <h2>Acceso protegido</h2>
-            <p class="auth-sub">Ingresa tu contraseña para continuar</p>
+            <h2>${isInactivity ? 'Bloqueo por inactividad' : 'Acceso protegido'}</h2>
+            <p class="auth-sub">${isInactivity ? 'La app se bloqueó tras un tiempo sin uso. Ingresa tu contraseña.' : 'Ingresa tu contraseña para continuar'}</p>
           </div>
+          <div id="auth-lockout-box" class="auth-lockout-box" style="display:none"></div>
           <div class="auth-field">
             <label class="auth-label">Contraseña</label>
             <div class="auth-input-wrap">
@@ -365,12 +530,13 @@ const Auth = {
               </button>
             </div>
           </div>
+          ${!isInactivity ? `
           <label class="auth-remember">
             <input type="checkbox" id="auth-remember" />
             <span class="auth-checkbox-custom"></span>
             <span>Recordarme en este dispositivo</span>
-          </label>
-          <div class="auth-error" id="auth-error"></div>
+          </label>` : ''}
+          <div class="auth-error" id="auth-error" style="display:none"></div>
           <button class="auth-btn" id="auth-submit">Entrar</button>
         </div>`;
     }
@@ -381,7 +547,7 @@ const Auth = {
           ${logo}
           <div class="auth-heading">
             <h2>Crear contraseña</h2>
-            <p class="auth-sub">Protege tu BudgetFlow. Esta contraseña se pedirá en dispositivos nuevos.</p>
+            <p class="auth-sub">Protege tu BudgetFlow con cifrado PBKDF2 y bloqueo automático.</p>
           </div>
           <div class="auth-field">
             <label class="auth-label">Nueva contraseña</label>
@@ -400,7 +566,7 @@ const Auth = {
             </div>
           </div>
           ${durationSelect}
-          <div class="auth-error" id="auth-error"></div>
+          <div class="auth-error" id="auth-error" style="display:none"></div>
           <button class="auth-btn" id="auth-submit">Crear contraseña</button>
         </div>`;
     }
@@ -412,7 +578,7 @@ const Auth = {
           <div class="auth-heading">
             <div class="auth-badge-warn">Contraseña vencida</div>
             <h2>Tiempo de renovar</h2>
-            <p class="auth-sub">Tu contraseña ha vencido. Crea una nueva para continuar.</p>
+            <p class="auth-sub">El período de vigencia ha concluido. Define una nueva clave para continuar.</p>
           </div>
           <div class="auth-field">
             <label class="auth-label">Contraseña actual</label>
@@ -439,7 +605,7 @@ const Auth = {
             </div>
           </div>
           ${durationSelect}
-          <div class="auth-error" id="auth-error"></div>
+          <div class="auth-error" id="auth-error" style="display:none"></div>
           <button class="auth-btn" id="auth-submit">Renovar contraseña</button>
         </div>`;
     }
@@ -468,14 +634,47 @@ const Auth = {
     let visible = false;
     btn.addEventListener('click', () => {
       visible = !visible;
-      inp.type      = visible ? 'text' : 'password';
+      inp.type = visible ? 'text' : 'password';
       btn.innerHTML = Auth._eyeIcon(visible);
     });
   },
 
   _showError(msg) {
     const el = document.getElementById('auth-error');
-    if (el) { el.textContent = msg; el.style.display = msg ? 'block' : 'none'; }
+    if (el) {
+      el.textContent = msg;
+      el.style.display = msg ? 'block' : 'none';
+    }
+  },
+
+  _updateLockoutUI() {
+    const box = document.getElementById('auth-lockout-box');
+    const submit = document.getElementById('auth-submit');
+    const pwInput = document.getElementById('auth-pw');
+    if (!box) return;
+
+    const remaining = getLockoutRemainingSec();
+    if (remaining > 0) {
+      box.style.display = 'block';
+      box.innerHTML = `
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.5">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <span>Acceso suspendido por demasiados intentos. Espera <strong>${remaining}s</strong></span>
+        </div>`;
+      if (submit) submit.disabled = true;
+      if (pwInput) pwInput.disabled = true;
+
+      setTimeout(() => Auth._updateLockoutUI(), 1000);
+    } else {
+      box.style.display = 'none';
+      if (submit) submit.disabled = false;
+      if (pwInput) {
+        pwInput.disabled = false;
+        pwInput.focus();
+      }
+    }
   },
 
   _bindOverlayEvents(mode) {
@@ -486,27 +685,52 @@ const Auth = {
     const submit = document.getElementById('auth-submit');
     if (!submit) return;
 
+    // Verificar si hay bloqueo de fuerza bruta activo
+    if (mode === 'lock' || mode === 'lock_inactivity') {
+      Auth._updateLockoutUI();
+    }
+
     document.getElementById('auth-overlay').querySelectorAll('.auth-input').forEach(inp => {
-      inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit.click(); });
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !submit.disabled) submit.click();
+      });
     });
 
-    if (mode === 'lock') {
+    if (mode === 'lock' || mode === 'lock_inactivity') {
       submit.addEventListener('click', async () => {
-        const pw  = document.getElementById('auth-pw')?.value || '';
+        if (getLockoutRemainingSec() > 0) return;
+
+        const pw = document.getElementById('auth-pw')?.value || '';
         const rem = document.getElementById('auth-remember')?.checked;
         Auth._showError('');
-        submit.disabled     = true;
-        submit.textContent  = 'Verificando…';
+
+        submit.disabled = true;
+        submit.textContent = 'Verificando con PBKDF2…';
+
+        // Pequeño retardo defensivo si ya hubo más de 2 fallos
+        const currentFails = parseInt(sessionStorage.getItem(FAILS_KEY) || '0', 10);
+        if (currentFails >= 3) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
 
         const ok = await Auth.verify(pw);
         if (!ok) {
-          Auth._showError('Contraseña incorrecta. Intenta de nuevo.');
-          submit.disabled    = false;
-          submit.textContent = 'Entrar';
-          document.getElementById('auth-pw').value = '';
-          document.getElementById('auth-pw').focus();
+          const fails = recordFailedAttempt();
+          if (fails >= 5) {
+            Auth._showError('Contraseña incorrecta. Has excedido los intentos permitidos.');
+            Auth._updateLockoutUI();
+          } else {
+            const left = 5 - fails;
+            Auth._showError(`Contraseña incorrecta. Te quedan ${left} intento${left !== 1 ? 's' : ''}.`);
+            submit.disabled = false;
+            submit.textContent = 'Entrar';
+            const pwInp = document.getElementById('auth-pw');
+            if (pwInp) { pwInp.value = ''; pwInp.focus(); }
+          }
           return;
         }
+
+        resetFailedAttempts();
         if (rem) await Auth.createSession();
         Auth._unlock();
       });
@@ -519,11 +743,17 @@ const Auth = {
         const dur = parseInt(document.getElementById('auth-duration')?.value || '30', 10);
         Auth._showError('');
 
-        if (pw.length < 6) { Auth._showError('La contraseña debe tener al menos 6 caracteres.'); return; }
-        if (pw !== pw2)    { Auth._showError('Las contraseñas no coinciden.'); return; }
+        if (pw.length < 6) {
+          Auth._showError('La contraseña debe tener al menos 6 caracteres.');
+          return;
+        }
+        if (pw !== pw2) {
+          Auth._showError('Las contraseñas no coinciden.');
+          return;
+        }
 
-        submit.disabled    = true;
-        submit.textContent = 'Guardando…';
+        submit.disabled = true;
+        submit.textContent = 'Generando clave cifrada…';
         await Auth.setPassword(pw, dur);
         Auth._unlock();
       });
@@ -536,18 +766,29 @@ const Auth = {
         const pw2   = document.getElementById('auth-pw2')?.value    || '';
         const dur   = parseInt(document.getElementById('auth-duration')?.value || '30', 10);
         Auth._showError('');
-        submit.disabled    = true;
+
+        submit.disabled = true;
         submit.textContent = 'Verificando…';
 
         const oldOk = await Auth.verify(oldPw);
         if (!oldOk) {
           Auth._showError('La contraseña actual es incorrecta.');
-          submit.disabled    = false;
+          submit.disabled = false;
           submit.textContent = 'Renovar contraseña';
           return;
         }
-        if (pw.length < 6) { Auth._showError('La nueva contraseña debe tener al menos 6 caracteres.'); submit.disabled = false; submit.textContent = 'Renovar contraseña'; return; }
-        if (pw !== pw2)    { Auth._showError('Las contraseñas no coinciden.'); submit.disabled = false; submit.textContent = 'Renovar contraseña'; return; }
+        if (pw.length < 6) {
+          Auth._showError('La nueva contraseña debe tener al menos 6 caracteres.');
+          submit.disabled = false;
+          submit.textContent = 'Renovar contraseña';
+          return;
+        }
+        if (pw !== pw2) {
+          Auth._showError('Las contraseñas no coinciden.');
+          submit.disabled = false;
+          submit.textContent = 'Renovar contraseña';
+          return;
+        }
 
         await Auth.setPassword(pw, dur);
         Auth._unlock();
@@ -555,32 +796,52 @@ const Auth = {
     }
   },
 
-  /* ---- Panel de ajustes integrado ---- */
+  /* ---- Panel de Seguridad Integrado ---- */
+
   async renderSettingsPanel() {
-    const cfg       = await Auth._loadCfg();
+    const cfg = await Auth._loadCfg();
     const configured = !!cfg?.hash;
-    const d          = await Auth.expiresInDays();
-    const daysLabel  = configured
+    const d = await Auth.expiresInDays();
+    const daysLabel = configured
       ? (d === Infinity ? '—' : (d <= 0 ? 'Vencida' : `${d} día${d !== 1 ? 's' : ''} restantes`))
       : '—';
-    const warn       = configured && d <= 7 && d > 0;
+    const warn = configured && d <= 7 && d > 0;
     const expiresDate = cfg?.expiresAt
       ? new Date(cfg.expiresAt).toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' })
       : '—';
 
+    const currentAutoLock = Auth.getAutoLockMinutes();
+    const isFBConfigured = window.FBAuth && window.FBAuth.isConfigured();
+    const fbUser = window.FBAuth?.currentUser;
+
     return `
       <div class="auth-settings-panel" id="auth-settings-panel">
+        
+        <!-- Hero de Seguridad -->
+        <div class="auth-security-hero">
+          <div class="auth-security-hero-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="auth-security-hero-title">Seguridad y Cuentas</div>
+            <div class="auth-security-hero-subtitle">Protección PBKDF2 con Salt aleatorio, bloqueo por inactividad y sincronización multi-cuenta con Firebase.</div>
+          </div>
+        </div>
+
+        <!-- Fila: Contraseña de Acceso -->
         <div class="auth-settings-row">
           <div>
             <div class="auth-settings-title">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
               </svg>
-              Contraseña de acceso
+              Contraseña de acceso local
             </div>
             <div class="auth-settings-meta">
               ${configured
-                ? `Activa · Vence el <strong>${expiresDate}</strong> · <span class="${warn ? 'auth-warn-text' : ''}">${daysLabel}</span>`
+                ? `Cifrado PBKDF2 · Vence el <strong>${expiresDate}</strong> · <span class="${warn ? 'auth-warn-text' : ''}">${daysLabel}</span>`
                 : 'Sin contraseña configurada'}
             </div>
           </div>
@@ -588,6 +849,49 @@ const Auth = {
             ${configured ? 'Cambiar' : 'Crear'}
           </button>
         </div>
+
+        <!-- Fila: Tiempo de Bloqueo por Inactividad -->
+        <div class="auth-settings-row">
+          <div>
+            <div class="auth-settings-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+              </svg>
+              Tiempo de bloqueo por inactividad
+            </div>
+            <div class="auth-settings-meta">
+              Bloquea la aplicación automáticamente si no interactúas con ella
+            </div>
+          </div>
+          <select class="auth-select" id="auth-autolock-select" style="max-width:130px;padding:.35rem .5rem">
+            <option value="5"  ${currentAutoLock === 5 ? 'selected' : ''}>5 minutos</option>
+            <option value="15" ${currentAutoLock === 15 ? 'selected' : ''}>15 minutos</option>
+            <option value="30" ${currentAutoLock === 30 ? 'selected' : ''}>30 minutos</option>
+            <option value="60" ${currentAutoLock === 60 ? 'selected' : ''}>1 hora</option>
+            <option value="0"  ${currentAutoLock === 0 ? 'selected' : ''}>Desactivado</option>
+          </select>
+        </div>
+
+        <!-- Fila: Cuentas Multi-Usuario con Firebase -->
+        <div class="auth-settings-row">
+          <div>
+            <div class="auth-settings-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+              </svg>
+              Cuentas en la nube (Firebase Firestore)
+            </div>
+            <div class="auth-settings-meta">
+              ${isFBConfigured
+                ? (fbUser ? `Conectado como <strong>${fbUser.email || fbUser.displayName || 'Usuario'}</strong>` : 'Conectado a Firestore · Sin sesión activa')
+                : 'Conexión lista · Pega las credenciales de Firebase para habilitar cuentas'}
+            </div>
+          </div>
+          <button class="auth-settings-btn" id="auth-settings-firebase" style="background:var(--primary);color:#fff;border-color:var(--primary)">
+            ${isFBConfigured ? (fbUser ? 'Mi Cuenta' : 'Iniciar Sesión') : 'Configurar'}
+          </button>
+        </div>
+
         ${configured ? `
         <div class="auth-settings-row" style="padding-top:.5rem;border-top:1px solid var(--border)">
           <span class="auth-settings-meta">Cerrar sesión en este dispositivo</span>
@@ -602,22 +906,287 @@ const Auth = {
 
   bindSettingsEvents() {
     document.getElementById('auth-settings-change')?.addEventListener('click', () => {
-      // Cerrar el modal de seguridad antes de abrir el de cambio de contraseña
       const secOverlay = document.getElementById('security-modal-overlay');
       if (secOverlay) secOverlay.style.display = 'none';
       Auth._showChangeModal();
     });
+
+    document.getElementById('auth-autolock-select')?.addEventListener('change', (e) => {
+      const mins = parseInt(e.target.value, 10);
+      Auth.setAutoLockMinutes(mins);
+      if (window.toast) toast(`⏱️ Auto-bloqueo ajustado a ${mins === 0 ? 'Desactivado' : mins + ' min'}`);
+    });
+
+    document.getElementById('auth-settings-firebase')?.addEventListener('click', () => {
+      const secOverlay = document.getElementById('security-modal-overlay');
+      if (secOverlay) secOverlay.style.display = 'none';
+      Auth._showFirebaseModal();
+    });
+
     document.getElementById('auth-settings-logout')?.addEventListener('click', () => {
       if (confirm('¿Cerrar sesión en este dispositivo?')) Auth.logout();
     });
+
     document.getElementById('auth-settings-remove')?.addEventListener('click', () => {
       Auth._showConfirmRemoveModal();
     });
   },
 
-  /** Modal de confirmación para eliminar contraseña — reemplaza el confirm() nativo. */
+  /** Modal para gestionar cuenta Firebase o configurar credenciales */
+  _showFirebaseModal() {
+    document.getElementById('fb-modal-overlay')?.remove();
+
+    const isConfigured = window.FBAuth && window.FBAuth.isConfigured();
+    const user = window.FBAuth?.currentUser;
+
+    const el = document.createElement('div');
+    el.id = 'fb-modal-overlay';
+    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem;animation:fadeIn .15s ease';
+
+    let contentHtml = '';
+
+    if (!isConfigured) {
+      // Formulario para pegar la configuración de Firebase Console
+      const cfg = window.FBAuth?.getConfig() || {};
+      contentHtml = `
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
+          <p style="font-size:.84rem;color:var(--text-2);line-height:1.5">
+            Para que cada persona tenga su propia cuenta con Firebase Auth y su propio presupuesto en Cloud Firestore, pega la configuración de tu proyecto de Firebase.
+          </p>
+          <div class="auth-field">
+            <label class="auth-label">Configuración JSON o valores:</label>
+            <textarea id="fb-cfg-input" class="auth-input" rows="6" style="font-family:monospace;font-size:.78rem;line-height:1.4" placeholder='{
+  "apiKey": "AIzaSy...",
+  "authDomain": "tu-app.firebaseapp.com",
+  "projectId": "tu-app",
+  "storageBucket": "tu-app.appspot.com",
+  "messagingSenderId": "...",
+  "appId": "..."
+}'></textarea>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+            <a href="FIREBASE_SETUP.md" target="_blank" style="font-size:.78rem;color:var(--primary);text-decoration:underline">Ver guía paso a paso</a>
+            <div style="display:flex;gap:.5rem">
+              <button id="fb-modal-close-btn" class="auth-settings-btn">Cancelar</button>
+              <button id="fb-save-cfg-btn" class="auth-btn" style="width:auto;padding:.4rem .9rem">Guardar y Conectar</button>
+            </div>
+          </div>
+        </div>`;
+    } else if (user) {
+      // Usuario conectado actualmente
+      contentHtml = `
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
+          <div style="display:flex;align-items:center;gap:.75rem">
+            <div style="width:40px;height:40px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem">
+              ${(user.displayName || user.email || 'U').charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div style="font-weight:600;font-size:.92rem">${user.displayName || 'Usuario Firebase'}</div>
+              <div style="font-size:.78rem;color:var(--text-2)">${user.email}</div>
+            </div>
+          </div>
+          <div style="font-size:.8rem;color:var(--text-2);padding:.6rem .8rem;background:var(--bg-alt);border-radius:var(--radius);line-height:1.4">
+            Tus presupuestos, categorías y gastos se sincronizan automáticamente en tu propia cuenta en Cloud Firestore.
+          </div>
+          <div style="display:flex;justify-content:space-between;gap:.5rem;padding-top:.5rem">
+            <button id="fb-reset-cfg-btn" class="auth-settings-btn" style="color:var(--text-3)">Cambiar proyecto Firebase</button>
+            <div style="display:flex;gap:.5rem">
+              <button id="fb-modal-close-btn" class="auth-settings-btn">Cerrar</button>
+              <button id="fb-logout-btn" class="auth-settings-btn danger">Cerrar sesión</button>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      // Conectado pero no autenticado: Iniciar sesión o Registrarse
+      contentHtml = `
+        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
+          <div style="display:flex;gap:.5rem;border-bottom:1px solid var(--border);padding-bottom:.5rem">
+            <button id="fb-tab-login" style="flex:1;padding:.4rem;border:none;background:transparent;font-weight:600;color:var(--text);border-bottom:2px solid var(--primary);cursor:pointer">Iniciar Sesión</button>
+            <button id="fb-tab-register" style="flex:1;padding:.4rem;border:none;background:transparent;font-weight:500;color:var(--text-2);cursor:pointer">Registrarse</button>
+          </div>
+
+          <div id="fb-auth-form" style="display:flex;flex-direction:column;gap:.75rem">
+            <div id="fb-name-group" class="auth-field" style="display:none">
+              <label class="auth-label">Tu Nombre</label>
+              <input type="text" id="fb-name" class="auth-input" placeholder="Ej. José Pérez" />
+            </div>
+            <div class="auth-field">
+              <label class="auth-label">Correo Electrónico</label>
+              <input type="email" id="fb-email" class="auth-input" placeholder="nombre@correo.com" />
+            </div>
+            <div class="auth-field">
+              <label class="auth-label">Contraseña</label>
+              <input type="password" id="fb-pw" class="auth-input" placeholder="••••••••" />
+            </div>
+            <div class="auth-error" id="fb-error" style="display:none"></div>
+            <button class="auth-btn" id="fb-submit-btn">Entrar con Correo</button>
+            
+            <div style="display:flex;align-items:center;gap:.5rem;margin:.25rem 0">
+              <div style="flex:1;height:1px;background:var(--border)"></div>
+              <span style="font-size:.75rem;color:var(--text-3)">o</span>
+              <div style="flex:1;height:1px;background:var(--border)"></div>
+            </div>
+
+            <button type="button" id="fb-google-btn" class="auth-settings-btn" style="display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.55rem;font-weight:600">
+              <svg width="16" height="16" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"/>
+                <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+              </svg>
+              Continuar con Google
+            </button>
+          </div>
+
+          <div style="display:flex;justify-content:flex-end;gap:.5rem;padding-top:.5rem">
+            <button id="fb-modal-close-btn" class="auth-settings-btn">Cerrar</button>
+          </div>
+        </div>`;
+    }
+
+    el.innerHTML = `
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:420px;box-shadow:var(--shadow-md);overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <img src="icons/icon-192.png" width="22" height="22" alt="BudgetFlow" style="border-radius:5px" />
+            <h3 style="margin:0;font-size:1rem;font-weight:600">Firebase Multi-Usuario</h3>
+          </div>
+          <button id="fb-modal-x-btn" style="background:transparent;border:none;color:var(--text-2);cursor:pointer">✕</button>
+        </div>
+        ${contentHtml}
+      </div>`;
+
+    document.body.appendChild(el);
+
+    const close = () => el.remove();
+    document.getElementById('fb-modal-x-btn')?.addEventListener('click', close);
+    document.getElementById('fb-modal-close-btn')?.addEventListener('click', close);
+
+    // Guardar configuración
+    document.getElementById('fb-save-cfg-btn')?.addEventListener('click', () => {
+      const txt = document.getElementById('fb-cfg-input')?.value.trim();
+      if (!txt) return;
+      try {
+        let parsed = null;
+        if (txt.startsWith('{')) {
+          parsed = JSON.parse(txt);
+        } else {
+          // Extraer variables si se pegó código JS
+          const matchApiKey = txt.match(/apiKey:\s*["']([^"']+)["']/);
+          const matchProjectId = txt.match(/projectId:\s*["']([^"']+)["']/);
+          if (matchApiKey && matchProjectId) {
+            parsed = {
+              apiKey: matchApiKey[1],
+              projectId: matchProjectId[1],
+              authDomain: (txt.match(/authDomain:\s*["']([^"']+)["']/) || [])[1] || `${matchProjectId[1]}.firebaseapp.com`,
+              storageBucket: (txt.match(/storageBucket:\s*["']([^"']+)["']/) || [])[1] || '',
+              messagingSenderId: (txt.match(/messagingSenderId:\s*["']([^"']+)["']/) || [])[1] || '',
+              appId: (txt.match(/appId:\s*["']([^"']+)["']/) || [])[1] || ''
+            };
+          }
+        }
+        if (!parsed || !parsed.apiKey || !parsed.projectId) {
+          alert('Configuración inválida. Asegúrate de incluir al menos apiKey y projectId.');
+          return;
+        }
+        window.FBAuth.saveConfig(parsed);
+      } catch (err) {
+        alert('Error analizando la configuración: ' + err.message);
+      }
+    });
+
+    document.getElementById('fb-reset-cfg-btn')?.addEventListener('click', () => {
+      if (confirm('¿Restablecer configuración de Firebase?')) {
+        window.FBAuth.resetConfig();
+      }
+    });
+
+    document.getElementById('fb-logout-btn')?.addEventListener('click', async () => {
+      await window.FBAuth.logout();
+      close();
+      if (window.toast) toast('Sesión de Firebase cerrada');
+      window.location.reload();
+    });
+
+    // Login/Register tabs
+    let isRegisterMode = false;
+    const tabLogin = document.getElementById('fb-tab-login');
+    const tabReg = document.getElementById('fb-tab-register');
+    const nameGrp = document.getElementById('fb-name-group');
+    const submitBtn = document.getElementById('fb-submit-btn');
+    const errBox = document.getElementById('fb-error');
+
+    tabLogin?.addEventListener('click', () => {
+      isRegisterMode = false;
+      tabLogin.style.borderBottom = '2px solid var(--primary)';
+      tabLogin.style.color = 'var(--text)';
+      tabReg.style.borderBottom = 'none';
+      tabReg.style.color = 'var(--text-2)';
+      if (nameGrp) nameGrp.style.display = 'none';
+      if (submitBtn) submitBtn.textContent = 'Entrar con Correo';
+      if (errBox) errBox.style.display = 'none';
+    });
+
+    tabReg?.addEventListener('click', () => {
+      isRegisterMode = true;
+      tabReg.style.borderBottom = '2px solid var(--primary)';
+      tabReg.style.color = 'var(--text)';
+      tabLogin.style.borderBottom = 'none';
+      tabLogin.style.color = 'var(--text-2)';
+      if (nameGrp) nameGrp.style.display = 'block';
+      if (submitBtn) submitBtn.textContent = 'Crear Cuenta';
+      if (errBox) errBox.style.display = 'none';
+    });
+
+    submitBtn?.addEventListener('click', async () => {
+      const email = document.getElementById('fb-email')?.value.trim();
+      const pw = document.getElementById('fb-pw')?.value;
+      const name = document.getElementById('fb-name')?.value.trim();
+
+      if (!email || !pw) {
+        if (errBox) { errBox.textContent = 'Ingresa correo y contraseña'; errBox.style.display = 'block'; }
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Procesando…';
+
+      try {
+        if (isRegisterMode) {
+          await window.FBAuth.registerWithEmail(email, pw, name);
+          if (window.toast) toast('¡Cuenta creada con éxito!');
+        } else {
+          await window.FBAuth.loginWithEmail(email, pw);
+          if (window.toast) toast('¡Bienvenido!');
+        }
+        close();
+        window.location.reload();
+      } catch (e) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = isRegisterMode ? 'Crear Cuenta' : 'Entrar con Correo';
+        if (errBox) {
+          errBox.textContent = e.message || 'Error de autenticación';
+          errBox.style.display = 'block';
+        }
+      }
+    });
+
+    document.getElementById('fb-google-btn')?.addEventListener('click', async () => {
+      try {
+        await window.FBAuth.loginWithGoogle();
+        close();
+        if (window.toast) toast('¡Sesión con Google iniciada!');
+        window.location.reload();
+      } catch (e) {
+        if (errBox) {
+          errBox.textContent = e.message || 'Error con Google Sign-In';
+          errBox.style.display = 'block';
+        }
+      }
+    });
+  },
+
   _showConfirmRemoveModal() {
-    // Cerrar el modal de seguridad
     const secOverlay = document.getElementById('security-modal-overlay');
     if (secOverlay) secOverlay.style.display = 'none';
 
@@ -633,13 +1202,13 @@ const Auth = {
             </svg>
           </div>
           <div>
-            <div style="font-weight:600;font-size:.9375rem;margin-bottom:.3rem">¿Eliminar contraseña?</div>
-            <div style="font-size:.8125rem;color:var(--text-secondary);line-height:1.45">Cualquier persona con acceso a la URL podrá entrar a tu presupuesto sin restricción.</div>
+            <div style="font-weight:600;font-size:.9375rem;margin-bottom:.3rem">¿Eliminar contraseña local?</div>
+            <div style="font-size:.8125rem;color:var(--text-secondary);line-height:1.45">Cualquier persona con acceso a esta URL podrá abrir la interfaz sin pedir contraseña.</div>
           </div>
         </div>
         <div style="display:flex;gap:.625rem;justify-content:flex-end">
-          <button id="auth-confirm-cancel" style="padding:.5rem 1rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-alt);color:var(--text);font-family:inherit;font-size:.875rem;font-weight:500;cursor:pointer">Cancelar</button>
-          <button id="auth-confirm-delete" style="padding:.5rem 1rem;border-radius:var(--radius);border:1px solid color-mix(in srgb,var(--danger) 35%,transparent);background:color-mix(in srgb,var(--danger) 10%,var(--bg-alt));color:var(--danger);font-family:inherit;font-size:.875rem;font-weight:600;cursor:pointer">Eliminar</button>
+          <button id="auth-confirm-cancel" class="auth-settings-btn">Cancelar</button>
+          <button id="auth-confirm-delete" class="auth-settings-btn danger" style="font-weight:600">Eliminar</button>
         </div>
       </div>`;
     document.body.appendChild(el);
@@ -655,13 +1224,12 @@ const Auth = {
   },
 
   _showChangeModal() {
-    // Crear overlay propio encima de todo (z-index > modal de seguridad)
     document.getElementById('auth-change-overlay')?.remove();
 
     Auth.isConfigured().then(configured => {
       Auth.getDurationDays().then(currentDur => {
         const DURATION_OPTIONS = [15, 30, 60, 90, 180];
-        const durationLabels   = { 15:'15 días', 30:'30 días', 60:'2 meses', 90:'3 meses', 180:'6 meses' };
+        const durationLabels = { 15:'15 días', 30:'30 días', 60:'2 meses', 90:'3 meses', 180:'6 meses' };
 
         const el = document.createElement('div');
         el.id = 'auth-change-overlay';
@@ -707,8 +1275,8 @@ const Auth = {
               </div>
               <div class="auth-error" id="ach-error" style="display:none"></div>
               <div style="display:flex;gap:.625rem;padding-top:.125rem">
-                <button id="ach-cancel" style="padding:.5rem 1rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--bg-alt);color:var(--text);font-family:inherit;font-size:.875rem;font-weight:500;cursor:pointer;flex-shrink:0">Cancelar</button>
-                <button id="ach-save" style="flex:1;padding:.5rem 1rem;border-radius:var(--radius);border:none;background:var(--accent);color:#fff;font-family:inherit;font-size:.875rem;font-weight:600;cursor:pointer">Guardar</button>
+                <button id="ach-cancel" class="auth-settings-btn" style="flex-shrink:0">Cancelar</button>
+                <button id="ach-save" class="auth-btn" style="flex:1">Guardar con PBKDF2</button>
               </div>
             </div>
           </div>`;
@@ -730,9 +1298,10 @@ const Auth = {
         document.getElementById('auth-change-close').addEventListener('click', close);
         document.getElementById('ach-cancel').addEventListener('click', close);
 
-        // Enter en cualquier campo dispara guardar
         el.querySelectorAll('.auth-input').forEach(inp => {
-          inp.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('ach-save')?.click(); });
+          inp.addEventListener('keydown', e => {
+            if (e.key === 'Enter') document.getElementById('ach-save')?.click();
+          });
         });
 
         document.getElementById('ach-save').addEventListener('click', async () => {
@@ -744,19 +1313,28 @@ const Auth = {
 
           if (configured) {
             const oldOk = await Auth.verify(oldPw);
-            if (!oldOk) { showErr('La contraseña actual es incorrecta.'); return; }
+            if (!oldOk) {
+              showErr('La contraseña actual es incorrecta.');
+              return;
+            }
           }
-          if (pw.length < 6) { showErr('La contraseña debe tener al menos 6 caracteres.'); return; }
-          if (pw !== pw2)    { showErr('Las contraseñas no coinciden.'); return; }
+          if (pw.length < 6) {
+            showErr('La contraseña debe tener al menos 6 caracteres.');
+            return;
+          }
+          if (pw !== pw2) {
+            showErr('Las contraseñas no coinciden.');
+            return;
+          }
 
           const btn = document.getElementById('ach-save');
-          btn.disabled = true; btn.textContent = 'Guardando…';
+          btn.disabled = true;
+          btn.textContent = 'Guardando…';
 
           await Auth.setPassword(pw, dur);
           close();
           if (window.toast) toast('🔒 Contraseña actualizada');
 
-          // Actualizar panel de seguridad si está abierto
           const panel = document.getElementById('auth-settings-panel');
           if (panel) {
             panel.outerHTML = await Auth.renderSettingsPanel();

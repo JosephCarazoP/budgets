@@ -1643,7 +1643,7 @@ details[open] > summary::before { transform: rotate(90deg); }
   transform: rotate(45deg) translate(-1px, -1px);
 }
 
-/* ---- Error ---- */
+/* ---- Error & Lockout ---- */
 .auth-error {
   display: none;
   font-size: .78rem;
@@ -1653,6 +1653,18 @@ details[open] > summary::before { transform: rotate(90deg); }
   border-radius: var(--radius);
   padding: .5rem .75rem;
   line-height: 1.45;
+}
+
+.auth-lockout-box {
+  display: none;
+  font-size: .8rem;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  border-radius: var(--radius);
+  padding: .65rem .85rem;
+  line-height: 1.45;
+  margin-bottom: .85rem;
 }
 
 /* ---- Buttons ---- */

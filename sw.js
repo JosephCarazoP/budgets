@@ -1,7 +1,31 @@
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = `budgetflow-static-${VERSION}`;
-const APP_SHELL = ['/', '/index.html', '/app.js', '/auth.js', '/styles.css', '/manifest.json'];
-const CRITICAL_ASSETS = new Set(['/index.html', '/app.js', '/auth.js', '/styles.css', '/manifest.json']);
+const APP_SHELL = [
+  '/',
+  '/index.html',
+  '/app.js',
+  '/auth.js',
+  '/firebase-config.js',
+  '/styles.css',
+  '/auth.css',
+  '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-maskable-512.png',
+  '/icons/apple-touch-icon.png',
+  '/icons/favicon.png',
+  '/icons/favicon.svg'
+];
+const CRITICAL_ASSETS = new Set([
+  '/index.html',
+  '/app.js',
+  '/auth.js',
+  '/firebase-config.js',
+  '/styles.css',
+  '/auth.css',
+  '/manifest.json',
+  '/icons/icon-192.png'
+]);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));
