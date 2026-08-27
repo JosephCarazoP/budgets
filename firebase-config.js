@@ -12,12 +12,13 @@
 // Reemplaza estos valores con los de tu consola de Firebase:
 // https://console.firebase.google.com -> Configuración de proyecto -> Apps web
 const DEFAULT_FIREBASE_CONFIG = {
-  apiKey: "TU_API_KEY",
-  authDomain: "tu-proyecto.firebaseapp.com",
-  projectId: "tu-proyecto",
-  storageBucket: "tu-proyecto.appspot.com",
-  messagingSenderId: "1234567890",
-  appId: "1:1234567890:web:abcdef123456"
+  apiKey: "AIzaSyDz8NiYZfjMyIH6Ird7wedYFveFgCwEPos",
+  authDomain: "budgetflow-app-7cb2c.firebaseapp.com",
+  projectId: "budgetflow-app-7cb2c",
+  storageBucket: "budgetflow-app-7cb2c.firebasestorage.app",
+  messagingSenderId: "987890901695",
+  appId: "1:987890901695:web:530eec1e210b6ae79fdc0a",
+  measurementId: "G-YLSD8XDV7S"
 };
 
 // Permite persistir credenciales configuradas desde la interfaz sin tocar código
