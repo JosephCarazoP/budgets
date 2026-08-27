@@ -438,20 +438,31 @@ function renderCharts() {
   const colors       = labels.map((l) => map[l].color || '#64748b');
 
   const isDark = state.theme === 'dark';
-  const gridColor  = isDark ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.06)';
-  const labelColor = isDark ? '#a1a1aa' : '#71717a';
+  const gridColor  = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+  const labelColor = isDark ? '#9999a1' : '#5c5c64';
 
   Chart.defaults.color = labelColor;
+  Chart.defaults.font.family = "'Geist', -apple-system, BlinkMacSystemFont, sans-serif";
 
   categoriesChart?.destroy();
   categoriesChart = new Chart($('chart-categories'), {
     type: 'doughnut',
-    data: { labels, datasets: [{ data: assignedData, backgroundColor: colors, borderWidth: 2,
-      borderColor: isDark ? '#18181b' : '#fff' }] },
+    data: {
+      labels,
+      datasets: [{
+        data: assignedData,
+        backgroundColor: colors,
+        borderWidth: 1.5,
+        borderColor: isDark ? '#08080a' : '#ffffff'
+      }]
+    },
     options: {
-      cutout: '65%',
+      cutout: '72%',
       plugins: {
-        legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11, family: 'Geist, system-ui' } } },
+        legend: {
+          position: 'bottom',
+          labels: { boxWidth: 8, boxHeight: 8, padding: 12, font: { size: 11 } }
+        },
         tooltip: { callbacks: { label: (c) => ` ${c.label}: ${money(c.raw)}` } }
       }
     }
@@ -463,17 +474,22 @@ function renderCharts() {
     data: {
       labels,
       datasets: [
-        { label: 'Asignado', data: assignedData, backgroundColor: colors.map((c) => c + 'aa'), borderRadius: 4 },
-        { label: 'Gastado',  data: spentData,    backgroundColor: '#ef444477',                borderRadius: 4 }
+        { label: 'Asignado', data: assignedData, backgroundColor: colors.map((c) => c + 'c0'), borderRadius: 2, borderWidth: 0 },
+        { label: 'Gastado',  data: spentData,    backgroundColor: isDark ? '#f43f5ecc' : '#e11d48cc', borderRadius: 2, borderWidth: 0 }
       ]
     },
     options: {
       responsive: true,
       scales: {
-        x: { grid: { color: gridColor }, ticks: { font: { size: 10, family: 'Geist, system-ui' } } },
-        y: { grid: { color: gridColor }, ticks: { callback: (v) => `₡${(v/1000).toFixed(0)}k`, font: { size: 10, family: 'Geist, system-ui' } } }
+        x: { grid: { color: gridColor }, ticks: { font: { size: 10 } } },
+        y: { grid: { color: gridColor }, ticks: { callback: (v) => `₡${(v/1000).toFixed(0)}k`, font: { size: 10 } } }
       },
-      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 12, font: { size: 11 } } } }
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { boxWidth: 8, boxHeight: 8, padding: 12, font: { size: 11 } }
+        }
+      }
     }
   });
 }
@@ -542,7 +558,7 @@ function renderSources() {
         <div class="source-meta">
           ${badge}
           <div class="source-actions">
-            <button class="btn-ghost" style="padding:.35rem .65rem;font-size:.8rem" onclick="startEditSource('${s.id}')">Editar</button>
+            <button class="btn-ghost" onclick="startEditSource('${s.id}')">Editar</button>
             <button class="btn-danger" onclick="deleteSource('${s.id}')">Eliminar</button>
           </div>
         </div>

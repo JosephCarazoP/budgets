@@ -86,3 +86,21 @@ Abre BudgetFlow en tu navegador, haz clic en el botón de **Seguridad / Cuentas*
 - Cuando el Usuario A inicia sesión con `usuarioA@gmail.com`, Firestore crea `/users/UID_A/data/budget_state`.
 - Cuando el Usuario B inicia sesión con `usuarioB@gmail.com`, Firestore crea `/users/UID_B/data/budget_state`.
 - Las reglas de Firestore bloquean automáticamente cualquier intento de un usuario de consultar o modificar el presupuesto de otro.
+
+---
+
+## 7. Solución de Problemas Frecuentes
+
+### Error: "This domain is not authorized for OAuth operations"
+Este error ocurre cuando el dominio o dirección IP desde donde se abre la web no está en la lista blanca de Firebase Authentication.
+
+**Pasos para solucionarlo:**
+1. Ve a [Firebase Console](https://console.firebase.google.com/) y abre tu proyecto.
+2. Entra a **Authentication** (en el menú lateral).
+3. Haz clic en la pestaña **Ajustes** (Settings) arriba.
+4. En el submenú, entra a **Dominios autorizados** (Authorized domains).
+5. Haz clic en **Agregar dominio** y añade según corresponda:
+   - Si usas Live Server / IP local: añade `127.0.0.1` (Firebase trae `localhost` por defecto, pero no `127.0.0.1`).
+   - Si lo subiste a producción (Vercel, Netlify, etc.): añade el dominio (ej. `mi-app.vercel.app`).
+   - *Nota:* Si abres el archivo directamente con doble clic en Windows (`file:///...`), Google OAuth no funcionará. Debes servir la aplicación con un servidor web local (como la extensión Live Server de VS Code o `npx serve .`).
+

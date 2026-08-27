@@ -177,6 +177,13 @@ const FBAuth = {
         return 'La ventana emergente de Google fue bloqueada por tu navegador.';
       case 'auth/network-request-failed':
         return 'Error de conexión a internet. Verifica tu red.';
+      case 'auth/unauthorized-domain': {
+        const host = window.location.hostname || 'este dominio';
+        if (window.location.protocol === 'file:') {
+          return 'No puedes iniciar sesión con Google desde un archivo local (file://). Debes abrir el proyecto usando un servidor local (ej. Live Server o http://localhost:...)';
+        }
+        return `Dominio no autorizado (${host}). Agrégalo en Firebase Console -> Authentication -> Ajustes -> Dominios autorizados.`;
+      }
       default:
         return err.message || 'Error al procesar la solicitud.';
     }
