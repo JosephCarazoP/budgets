@@ -1373,58 +1373,119 @@ function _startApp() {
   switchTab('dashboard');
 }
 
-async function initAppData() {
-  if (window.FBAuth && window.FBAuth.isConfigured()) {
-    const fbUser = window.FBAuth.currentUser;
-    if (fbUser) {
-      try {
-        const remoteState = await window.FBAuth.loadUserState(fbUser.uid);
-        if (remoteState) {
-          Object.assign(state, remoteState, { editingSourceId: null });
-        } else {
-          const cached = localStorage.getItem('budget_state_' + fbUser.uid);
-          if (cached) Object.assign(state, JSON.parse(cached), { editingSourceId: null });
-        }
-      } catch (err) {
-        console.warn('Error cargando de Firestore, usando caché local:', err);
-      }
+let _unsubscribeFirestore = null;
 
-      window.FBAuth.subscribeToUserState(fbUser.uid, (remote) => {
-        if (!remote || remote._deviceId === _deviceId) return;
-        Object.assign(state, remote, { editingSourceId: state.editingSourceId });
-        if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
-        if (!Array.isArray(state.assignments)) state.assignments = [];
-        reconcileAssignmentsWithDistributions();
-        renderOnly();
-        toast('🔄 Sincronizado con Firestore');
-      });
-    } else {
-      await loadFromSupabase();
-      setupRealtime();
+async function handleUserSession(user) {
+  const shell = document.querySelector('.app-shell');
+  const sidebar = document.getElementById('sidebar');
+
+  if (!user) {
+    // Si se cierra sesión: detener sincronización en tiempo real
+    if (_unsubscribeFirestore) {
+      _unsubscribeFirestore();
+      _unsubscribeFirestore = null;
     }
-  } else {
-    await loadFromSupabase();
-    setupRealtime();
+
+    // Limpiar estado en memoria para que no queden datos de un usuario previo
+    Object.assign(state, {
+      sources: [],
+      expenses: [],
+      categories: DEFAULT_CATEGORIES,
+      assignments: [],
+      editingSourceId: null,
+      editingExpenseId: null,
+      editingCategoryName: null
+    });
+
+    if (shell) shell.style.visibility = 'hidden';
+    if (sidebar) sidebar.style.visibility = 'hidden';
+
+    if (window.Auth) {
+      window.Auth.updateUserProfile(null);
+      window.Auth.showAuthPortal({
+        defaultTab: 'login',
+        onAuthSuccess: (newUser) => handleUserSession(newUser)
+      });
+    }
+    return;
   }
+
+  // Usuario autenticado: mostrar portal
+  if (window.Auth) {
+    window.Auth.hideAuthPortal();
+    window.Auth.updateUserProfile(user);
+  }
+
+  // Cargar datos de este usuario desde Firestore
+  try {
+    const remoteState = await window.FBAuth.loadUserState(user.uid);
+    if (remoteState) {
+      Object.assign(state, remoteState, { editingSourceId: null });
+    } else {
+      const cached = localStorage.getItem('budget_state_' + user.uid);
+      if (cached) {
+        Object.assign(state, JSON.parse(cached), { editingSourceId: null });
+      } else {
+        Object.assign(state, {
+          sources: [],
+          expenses: [],
+          categories: DEFAULT_CATEGORIES,
+          assignments: []
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Error cargando de Firestore, usando caché local:', err);
+  }
+
+  if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+  if (!Array.isArray(state.assignments)) state.assignments = [];
 
   migrateAssignmentsIfNeeded();
   reconcileAssignmentsWithDistributions();
   rebuildDistributionsFromAssignments();
+
+  // Escuchar cambios en Firestore en tiempo real para este usuario
+  if (_unsubscribeFirestore) _unsubscribeFirestore();
+  _unsubscribeFirestore = window.FBAuth.subscribeToUserState(user.uid, (remote) => {
+    if (!remote || remote._deviceId === _deviceId) return;
+    Object.assign(state, remote, { editingSourceId: state.editingSourceId });
+    if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+    if (!Array.isArray(state.assignments)) state.assignments = [];
+    reconcileAssignmentsWithDistributions();
+    renderOnly();
+    toast('🔄 Sincronizado');
+  });
+
+  if (shell) shell.style.visibility = 'visible';
+  if (sidebar) sidebar.style.visibility = 'visible';
+
+  _startApp();
 }
 
 (async () => {
   applyTheme();
 
-  if (window.FBAuth) {
-    try {
-      await window.FBAuth.init();
-    } catch (e) {
-      console.warn('Error inicializando FBAuth:', e);
-    }
+  if (window.Auth && window.Auth._initInactivityTracker) {
+    window.Auth._initInactivityTracker();
   }
 
-  await Auth.init(async () => {
-    await initAppData();
+  if (window.FBAuth) {
+    const initialized = await window.FBAuth.init();
+    if (initialized) {
+      window.FBAuth.onChange((user) => {
+        handleUserSession(user);
+      });
+    } else {
+      // Si falta configurar Firebase, mostrar el portal con pestaña de login
+      if (window.Auth) {
+        window.Auth.showAuthPortal({
+          defaultTab: 'login',
+          onAuthSuccess: (user) => handleUserSession(user)
+        });
+      }
+    }
+  } else {
     _startApp();
-  });
+  }
 })();

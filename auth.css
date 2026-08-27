@@ -1795,3 +1795,424 @@ details[open] > summary::before { transform: rotate(90deg); }
   .auth-settings-row { flex-direction: column; align-items: flex-start; gap: .5rem; }
   .auth-settings-btn { align-self: flex-start; }
 }
+
+/* ============================================================
+   LINEAR / VERCEL INSPIRED AUTH PORTAL & USER BADGE
+   Minimalist, spacious, monochrome base with crisp micro-details
+   ============================================================ */
+
+.auth-portal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  overflow-y: auto;
+  animation: fadeIn 0.2s ease;
+}
+
+.auth-portal-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2.25rem 2rem;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.auth-portal-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.65rem;
+}
+
+.auth-portal-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  object-fit: cover;
+}
+
+.auth-portal-title {
+  font-size: 1.18rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  margin: 0;
+}
+
+.auth-portal-subtitle {
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* Segmented Pill Tabs */
+.auth-portal-tabs {
+  display: flex;
+  background: var(--bg-alt);
+  padding: 3px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.auth-portal-tab {
+  flex: 1;
+  text-align: center;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-2);
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  letter-spacing: -0.01em;
+}
+
+.auth-portal-tab:hover {
+  color: var(--text);
+}
+
+.auth-portal-tab.active {
+  background: var(--card);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Google Sign-in Button */
+.auth-google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  letter-spacing: -0.01em;
+}
+
+.auth-google-btn:hover {
+  background: var(--bg-alt);
+  border-color: var(--border-focus);
+}
+
+.auth-google-btn:active {
+  transform: scale(0.99);
+}
+
+/* Divider */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.73rem;
+  color: var(--text-3);
+  margin: 0.2rem 0;
+  text-transform: lowercase;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Form Groups & Inputs */
+.auth-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.auth-form-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: -0.01em;
+}
+
+.auth-form-link {
+  font-size: 0.75rem;
+  color: var(--text-2);
+  text-decoration: none;
+  transition: color 0.15s;
+  cursor: pointer;
+}
+
+.auth-form-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.auth-form-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.auth-form-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 0.85rem;
+  font-size: 0.85rem;
+  background: var(--bg-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
+}
+
+.auth-form-input:focus {
+  background: var(--card);
+  border-color: var(--text);
+  box-shadow: 0 0 0 1px var(--text);
+}
+
+.auth-form-input.has-eye {
+  padding-right: 2.35rem;
+}
+
+.auth-form-eye-btn {
+  position: absolute;
+  right: 0.5rem;
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+}
+
+.auth-form-eye-btn:hover {
+  color: var(--text);
+}
+
+/* Minimalist Password Strength Meter */
+.auth-strength-meter {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.auth-strength-bars {
+  display: flex;
+  gap: 4px;
+  height: 3px;
+}
+
+.auth-strength-bar {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background-color 0.2s ease;
+}
+
+.auth-strength-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--text-3);
+}
+
+.auth-strength-score-text {
+  font-weight: 600;
+}
+
+.auth-strength-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--text-3);
+  margin-top: 0.3rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-alt);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.auth-strength-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: color 0.15s;
+}
+
+.auth-strength-item.valid {
+  color: var(--success);
+  font-weight: 500;
+}
+
+.auth-strength-item svg {
+  flex-shrink: 0;
+}
+
+/* Password Match Hint */
+.auth-match-hint {
+  font-size: 0.72rem;
+  margin-top: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-3);
+}
+
+.auth-match-hint.valid {
+  color: var(--success);
+}
+
+.auth-match-hint.invalid {
+  color: var(--danger);
+}
+
+/* Action Submit Button */
+.auth-submit-btn {
+  width: 100%;
+  height: 38px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.auth-submit-btn:hover {
+  opacity: 0.92;
+}
+
+.auth-submit-btn:active {
+  transform: scale(0.99);
+}
+
+.auth-submit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Sidebar & Mobile User Profile Badge */
+.user-profile-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  margin-bottom: 0.5rem;
+  transition: border-color 0.15s;
+}
+
+.user-profile-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+}
+
+.user-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-profile-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.user-profile-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.user-profile-email {
+  font-size: 0.7rem;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+.user-logout-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+  flex-shrink: 0;
+}
+
+.user-logout-btn:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+

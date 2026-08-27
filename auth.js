@@ -1,165 +1,26 @@
 'use strict';
 
 /* ============================================================
-   BUDGETFLOW — ADVANCED AUTH & SECURITY MODULE
-   
-   Mejoras de Seguridad Implementadas:
-   1. Criptografía Robusta:
-      - Derivación PBKDF2 con 100,000 iteraciones (SHA-256) y salt
-        aleatorio de 16 bytes mediante Web Crypto API.
-      - NUNCA se almacena la contraseña en texto plano ni con
-        SHA-256 simple sin sal.
-      - Migración transparente y automática de hashes antiguos.
-   2. Protección contra Fuerza Bruta:
-      - Rate limiting progresivo tras 3 intentos.
-      - Bloqueo temporal estricto (Lockout de 60s) tras 5 intentos
-        con temporizador en pantalla persistente entre recargas.
-   3. Tokens de Sesión Inviolables:
-      - Generación de secreto local único por dispositivo (CSPRNG).
-      - El token no puede ser forjado por quien lea la base de datos.
-   4. Temporizador de Auto-bloqueo por Inactividad:
-      - Monitoreo global de actividad de usuario (mouse, teclado, touch).
-      - Bloqueo automático configurable (5m, 15m, 30m, 1h o off).
+   BUDGETFLOW — AUTH & SECURITY PORTAL (Linear / Vercel Aesthetic)
+   ============================================================
+   Gestiona:
+   1. Portal de entrada principal multi-usuario con Firebase Auth:
+      - Inicio de sesión con Correo/Contraseña y Google.
+      - Registro seguro con Medidor de Fuerza de Contraseña en tiempo real.
+      - Validación de coincidencia de contraseñas y saneamiento.
+      - Recuperación de contraseña por correo.
+      - Protección contra fuerza bruta con cuenta regresiva.
+   2. Perfil de usuario activo en sidebar y mobile.
+   3. Bloqueo opcional por inactividad dentro de la sesión.
    ============================================================ */
 
-const SESSION_KEY       = 'bf_auth_ses';
-const DEVICE_SEC_KEY    = 'bf_dev_sec';
-const AUTOLOCK_KEY      = 'bf_autolock_min';
-const LOCKOUT_KEY       = 'bf_lockout_until';
-const FAILS_KEY         = 'bf_fail_attempts';
+const AUTOLOCK_KEY   = 'bf_autolock_min';
+const LOCKOUT_KEY    = 'bf_lockout_until';
+const FAILS_KEY      = 'bf_fail_attempts';
 
-/* ---- Crypto Helpers ---- */
+function now() { return Date.now(); }
 
-function now()      { return Date.now(); }
-function daysMs(d)  { return d * 86_400_000; }
-
-/** Genera un Salt aleatorio en formato hexadecimal (16 bytes = 32 caracteres hex) */
-function generateSalt() {
-  const buf = new Uint8Array(16);
-  crypto.getRandomValues(buf);
-  return Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-/** SHA-256 plano (mantenido solo para compatibilidad y migración) */
-async function sha256(text) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * Derivación de clave mediante PBKDF2 nativo de Web Crypto API.
- * 100,000 iteraciones de SHA-256 con salt criptográfico.
- */
-async function pbkdf2(password, saltHex, iterations = 100000) {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(password),
-    'PBKDF2',
-    false,
-    ['deriveBits']
-  );
-  const saltBytes = new Uint8Array(saltHex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-  const derivedBits = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      salt: saltBytes,
-      iterations: iterations,
-      hash: 'SHA-256'
-    },
-    keyMaterial,
-    256
-  );
-  return Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-/** Obtiene o genera un secreto criptográfico exclusivo de este dispositivo */
-function getDeviceSecret() {
-  let s = localStorage.getItem(DEVICE_SEC_KEY);
-  if (!s) {
-    const buf = new Uint8Array(24);
-    crypto.getRandomValues(buf);
-    s = Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
-    localStorage.setItem(DEVICE_SEC_KEY, s);
-  }
-  return s;
-}
-
-/** Espera hasta que window.db y window.STATE_ROW_ID estén listos */
-async function waitForDb(maxMs = 4000, intervalMs = 80) {
-  const deadline = Date.now() + maxMs;
-  while (Date.now() < deadline) {
-    if (window.db && window.STATE_ROW_ID) return true;
-    await new Promise(r => setTimeout(r, intervalMs));
-  }
-  return !!(window.db && window.STATE_ROW_ID);
-}
-
-/* ---- Supabase Storage for auth_cfg ---- */
-
-async function _getAuthCfg() {
-  await waitForDb();
-  if (!window.db || !window.STATE_ROW_ID) return null;
-  try {
-    const { data, error } = await window.db
-      .from('budget_state')
-      .select('data, auth_cfg')
-      .eq('id', window.STATE_ROW_ID)
-      .single();
-    if (error || !data) return null;
-
-    if (data.auth_cfg?.hash) return data.auth_cfg;
-
-    const legacy = data?.data?._authCfg;
-    if (legacy?.hash) {
-      _setAuthCfgDirect(legacy).catch(() => {});
-      return legacy;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-async function _setAuthCfgDirect(cfg) {
-  if (!window.db || !window.STATE_ROW_ID) return;
-  try {
-    await window.db
-      .from('budget_state')
-      .update({ auth_cfg: cfg })
-      .eq('id', window.STATE_ROW_ID);
-  } catch { /* ignorar */ }
-}
-
-async function _setAuthCfg(cfg) {
-  await waitForDb();
-  if (!window.db || !window.STATE_ROW_ID) return;
-
-  await _setAuthCfgDirect(cfg);
-
-  try {
-    const { data } = await window.db
-      .from('budget_state')
-      .select('data')
-      .eq('id', window.STATE_ROW_ID)
-      .single();
-    if (!data?.data) return;
-    const merged = { ...data.data };
-    if (cfg) merged._authCfg = cfg;
-    else delete merged._authCfg;
-    await window.db
-      .from('budget_state')
-      .update({ data: merged })
-      .eq('id', window.STATE_ROW_ID);
-  } catch { /* no bloquear */ }
-}
-
-/* ---- Sesión local segura ---- */
-function getSession()                 { try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch { return null; } }
-function setSession(token, expiresAt) { localStorage.setItem(SESSION_KEY, JSON.stringify({ token, expiresAt })); }
-function clearSession()               { localStorage.removeItem(SESSION_KEY); }
-
-/* ---- Rate Limiting y Protección de Fuerza Bruta ---- */
+/* ---- Rate Limiting ---- */
 function getLockoutRemainingSec() {
   const until = parseInt(sessionStorage.getItem(LOCKOUT_KEY) || '0', 10);
   const diff = until - now();
@@ -170,7 +31,7 @@ function recordFailedAttempt() {
   let fails = parseInt(sessionStorage.getItem(FAILS_KEY) || '0', 10) + 1;
   sessionStorage.setItem(FAILS_KEY, fails);
   if (fails >= 5) {
-    sessionStorage.setItem(LOCKOUT_KEY, now() + 60000); // 60 segundos de bloqueo
+    sessionStorage.setItem(LOCKOUT_KEY, now() + 60000); // 60s bloqueo
   }
   return fails;
 }
@@ -180,61 +41,578 @@ function resetFailedAttempts() {
   sessionStorage.removeItem(LOCKOUT_KEY);
 }
 
-/* ============================================================
-   PUBLIC AUTH API
-   ============================================================ */
+/* ---- Evaluador de Fortaleza de Contraseña ---- */
+function evaluatePasswordSecurity(pw) {
+  if (!pw) {
+    return {
+      score: 0,
+      label: 'Sin contraseña',
+      color: 'var(--border)',
+      checks: { length: false, mixedCase: false, number: false, symbol: false }
+    };
+  }
+
+  const checks = {
+    length: pw.length >= 8,
+    mixedCase: /[a-z]/.test(pw) && /[A-Z]/.test(pw),
+    number: /\d/.test(pw),
+    symbol: /[^a-zA-Z0-9]/.test(pw)
+  };
+
+  let score = 0;
+  if (checks.length) score++;
+  if (checks.mixedCase) score++;
+  if (checks.number) score++;
+  if (checks.symbol) score++;
+
+  let label = 'Muy débil';
+  let color = '#ef4444';
+
+  if (score === 2) {
+    label = 'Aceptable';
+    color = '#f59e0b';
+  } else if (score === 3) {
+    label = 'Buena';
+    color = '#3b82f6';
+  } else if (score === 4) {
+    label = 'Fuerte';
+    color = '#10b981';
+  }
+
+  return { score, label, color, checks };
+}
 
 const Auth = {
-  _cfg: undefined,
-  _onUnlocked: null,
+  _currentPortalMode: 'login', // 'login' | 'register' | 'forgot'
+  _onAuthSuccess: null,
   _lastActivity: now(),
   _inactivityTimer: null,
   _isLocked: false,
 
-  async _loadCfg() {
-    if (Auth._cfg !== undefined) return Auth._cfg;
-    Auth._cfg = await _getAuthCfg();
-    return Auth._cfg;
+  /* ============================================================
+     PORTAL DE AUTENTICACIÓN (LOGIN / REGISTRO / RECUPERACIÓN)
+     ============================================================ */
+
+  showAuthPortal(options = {}) {
+    const defaultMode = options.defaultTab || 'login';
+    Auth._currentPortalMode = defaultMode;
+    if (options.onAuthSuccess) {
+      Auth._onAuthSuccess = options.onAuthSuccess;
+    }
+
+    let overlay = document.getElementById('auth-portal-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'auth-portal-overlay';
+      overlay.className = 'auth-portal-overlay';
+      document.body.appendChild(overlay);
+    }
+
+    Auth._renderPortalContent(Auth._currentPortalMode);
   },
 
-  _invalidateCfg() {
-    Auth._cfg = undefined;
+  hideAuthPortal() {
+    const overlay = document.getElementById('auth-portal-overlay');
+    if (overlay) {
+      overlay.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+      overlay.style.opacity = '0';
+      overlay.style.transform = 'scale(0.99)';
+      setTimeout(() => overlay.remove(), 200);
+    }
   },
 
-  /* ---- Estado ---- */
-
-  async isConfigured() {
-    const cfg = await Auth._loadCfg();
-    return !!cfg?.hash;
+  _eyeIcon(visible) {
+    return visible
+      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+           <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+           <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+           <line x1="1" y1="1" x2="23" y2="23"/>
+         </svg>`
+      : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+           <circle cx="12" cy="12" r="3"/>
+         </svg>`;
   },
 
-  async isExpired() {
-    const cfg = await Auth._loadCfg();
-    if (!cfg?.expiresAt) return false;
-    return now() > cfg.expiresAt;
+  _checkIcon() {
+    return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>`;
   },
 
-  async expiresInDays() {
-    const cfg = await Auth._loadCfg();
-    if (!cfg?.expiresAt) return Infinity;
-    return Math.ceil((cfg.expiresAt - now()) / daysMs(1));
+  _dotIcon() {
+    return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="3"/>
+    </svg>`;
   },
 
-  async needsRenewalWarning() {
-    const d = await Auth.expiresInDays();
-    return d >= 0 && d <= 7;
+  _renderPortalContent(mode) {
+    const overlay = document.getElementById('auth-portal-overlay');
+    if (!overlay) return;
+
+    const isLogin = mode === 'login';
+    const isRegister = mode === 'register';
+    const isForgot = mode === 'forgot';
+
+    let bodyHtml = '';
+
+    if (isForgot) {
+      bodyHtml = `
+        <div style="display:flex;flex-direction:column;gap:1rem">
+          <div class="auth-form-group">
+            <label class="auth-form-label">Correo Electrónico</label>
+            <input type="email" id="forgot-email" class="auth-form-input" placeholder="nombre@correo.com" autofocus autocomplete="email" />
+          </div>
+          <div class="auth-error" id="portal-error" style="display:none"></div>
+          <div id="forgot-success-box" style="display:none;padding:.75rem .85rem;background:color-mix(in srgb,var(--success) 12%,transparent);border:1px solid color-mix(in srgb,var(--success) 25%,transparent);color:var(--success);border-radius:var(--radius);font-size:.8rem;line-height:1.45"></div>
+          <button class="auth-submit-btn" id="forgot-submit-btn">Enviar enlace de recuperación</button>
+          <button type="button" class="auth-form-link" id="forgot-back-btn" style="text-align:center;padding:.4rem;background:none;border:none">
+            ← Volver a Iniciar Sesión
+          </button>
+        </div>`;
+    } else {
+      bodyHtml = `
+        <!-- Botón Google -->
+        <button type="button" class="auth-google-btn" id="portal-google-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"/>
+            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+          </svg>
+          Continuar con Google
+        </button>
+
+        <div class="auth-divider">o con tu correo</div>
+
+        <form id="portal-form" style="display:flex;flex-direction:column;gap:.875rem" onsubmit="return false;">
+          ${isRegister ? `
+          <div class="auth-form-group">
+            <label class="auth-form-label">Nombre Completo</label>
+            <input type="text" id="portal-name" class="auth-form-input" placeholder="Ej. Juan Pérez" autocomplete="name" required />
+          </div>` : ''}
+
+          <div class="auth-form-group">
+            <label class="auth-form-label">Correo Electrónico</label>
+            <input type="email" id="portal-email" class="auth-form-input" placeholder="tu@correo.com" autocomplete="email" required />
+          </div>
+
+          <div class="auth-form-group">
+            <div class="auth-form-label">
+              <span>Contraseña</span>
+              ${isLogin ? `<a class="auth-form-link" id="portal-forgot-link">¿Olvidaste tu contraseña?</a>` : ''}
+            </div>
+            <div class="auth-form-input-wrap">
+              <input type="password" id="portal-pw" class="auth-form-input has-eye" placeholder="${isRegister ? 'Mínimo 8 caracteres' : '••••••••'}" autocomplete="${isRegister ? 'new-password' : 'current-password'}" required />
+              <button type="button" class="auth-form-eye-btn" id="portal-eye-pw">${Auth._eyeIcon(false)}</button>
+            </div>
+
+            ${isRegister ? `
+            <!-- Medidor de Seguridad en Tiempo Real -->
+            <div class="auth-strength-meter" id="auth-strength-meter">
+              <div class="auth-strength-bars">
+                <div class="auth-strength-bar" id="str-bar-1"></div>
+                <div class="auth-strength-bar" id="str-bar-2"></div>
+                <div class="auth-strength-bar" id="str-bar-3"></div>
+                <div class="auth-strength-bar" id="str-bar-4"></div>
+              </div>
+              <div class="auth-strength-label">
+                <span>Seguridad:</span>
+                <span class="auth-strength-score-text" id="str-score-text">Ingresa una contraseña</span>
+              </div>
+              <div class="auth-strength-checklist">
+                <div class="auth-strength-item" id="chk-len">${Auth._dotIcon()} Mínimo 8 caracteres</div>
+                <div class="auth-strength-item" id="chk-case">${Auth._dotIcon()} Mayúsculas y minúsculas</div>
+                <div class="auth-strength-item" id="chk-num">${Auth._dotIcon()} Al menos un número</div>
+                <div class="auth-strength-item" id="chk-sym">${Auth._dotIcon()} Al menos un símbolo (!@#$%^&*)</div>
+              </div>
+            </div>` : ''}
+          </div>
+
+          ${isRegister ? `
+          <div class="auth-form-group">
+            <label class="auth-form-label">Confirmar Contraseña</label>
+            <div class="auth-form-input-wrap">
+              <input type="password" id="portal-pw2" class="auth-form-input has-eye" placeholder="Repite tu contraseña" autocomplete="new-password" required />
+              <button type="button" class="auth-form-eye-btn" id="portal-eye-pw2">${Auth._eyeIcon(false)}</button>
+            </div>
+            <div class="auth-match-hint" id="portal-match-hint" style="display:none"></div>
+          </div>` : ''}
+
+          <div class="auth-lockout-box" id="portal-lockout-box"></div>
+          <div class="auth-error" id="portal-error"></div>
+
+          <button class="auth-submit-btn" id="portal-submit-btn">
+            ${isLogin ? 'Iniciar Sesión' : 'Crear Cuenta Segura'}
+          </button>
+        </form>`;
+    }
+
+    overlay.innerHTML = `
+      <div class="auth-portal-card">
+        <div class="auth-portal-header">
+          <img src="icons/icon-192.png" class="auth-portal-logo" alt="BudgetFlow" />
+          <h1 class="auth-portal-title">BudgetFlow</h1>
+          <p class="auth-portal-subtitle">
+            ${isForgot ? 'Recupera el acceso a tu cuenta' : 'Gestión inteligente de presupuestos multi-usuario'}
+          </p>
+        </div>
+
+        ${!isForgot ? `
+        <div class="auth-portal-tabs">
+          <button type="button" class="auth-portal-tab ${isLogin ? 'active' : ''}" id="portal-tab-login">Iniciar Sesión</button>
+          <button type="button" class="auth-portal-tab ${isRegister ? 'active' : ''}" id="portal-tab-register">Crear Cuenta</button>
+        </div>` : ''}
+
+        ${bodyHtml}
+      </div>`;
+
+    Auth._bindPortalEvents(mode);
   },
 
-  async getDurationDays() {
-    const cfg = await Auth._loadCfg();
-    return cfg?.durationDays || 30;
+  _bindPortalEvents(mode) {
+    const isLogin = mode === 'login';
+    const isRegister = mode === 'register';
+    const isForgot = mode === 'forgot';
+
+    const tabLogin = document.getElementById('portal-tab-login');
+    const tabRegister = document.getElementById('portal-tab-register');
+    const forgotLink = document.getElementById('portal-forgot-link');
+    const forgotBack = document.getElementById('forgot-back-btn');
+    const googleBtn = document.getElementById('portal-google-btn');
+    const submitBtn = document.getElementById('portal-submit-btn') || document.getElementById('forgot-submit-btn');
+    const errBox = document.getElementById('portal-error');
+
+    // Switch Tabs
+    tabLogin?.addEventListener('click', () => Auth._renderPortalContent('login'));
+    tabRegister?.addEventListener('click', () => Auth._renderPortalContent('register'));
+    forgotLink?.addEventListener('click', () => Auth._renderPortalContent('forgot'));
+    forgotBack?.addEventListener('click', () => Auth._renderPortalContent('login'));
+
+    // Toggles de ver contraseña
+    const bindEye = (eyeId, inputId) => {
+      const eye = document.getElementById(eyeId);
+      const inp = document.getElementById(inputId);
+      if (!eye || !inp) return;
+      let visible = false;
+      eye.addEventListener('click', () => {
+        visible = !visible;
+        inp.type = visible ? 'text' : 'password';
+        eye.innerHTML = Auth._eyeIcon(visible);
+      });
+    };
+
+    bindEye('portal-eye-pw', 'portal-pw');
+    bindEye('portal-eye-pw2', 'portal-pw2');
+
+    // Google Sign-In
+    googleBtn?.addEventListener('click', async () => {
+      if (!window.FBAuth) return;
+      errBox.style.display = 'none';
+      googleBtn.disabled = true;
+      googleBtn.style.opacity = '0.7';
+
+      try {
+        const user = await window.FBAuth.loginWithGoogle();
+        if (user) {
+          Auth.hideAuthPortal();
+          if (Auth._onAuthSuccess) Auth._onAuthSuccess(user);
+        }
+      } catch (err) {
+        googleBtn.disabled = false;
+        googleBtn.style.opacity = '1';
+        errBox.textContent = window.FBAuth.formatError(err);
+        errBox.style.display = 'block';
+      }
+    });
+
+    // Medidor de Contraseña Reactivo en Registro
+    if (isRegister) {
+      const pwInp = document.getElementById('portal-pw');
+      const pw2Inp = document.getElementById('portal-pw2');
+      const matchHint = document.getElementById('portal-match-hint');
+
+      const updateMeter = () => {
+        const val = pwInp.value || '';
+        const { score, label, color, checks } = evaluatePasswordSecurity(val);
+
+        // Actualizar barras
+        for (let i = 1; i <= 4; i++) {
+          const bar = document.getElementById(`str-bar-${i}`);
+          if (bar) {
+            bar.style.backgroundColor = i <= score ? color : 'var(--border)';
+          }
+        }
+
+        // Texto de fortaleza
+        const scoreText = document.getElementById('str-score-text');
+        if (scoreText) {
+          scoreText.textContent = label;
+          scoreText.style.color = color;
+        }
+
+        // Lista de verificación
+        const updateChk = (id, isValid) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          if (isValid) {
+            el.classList.add('valid');
+            el.innerHTML = `${Auth._checkIcon()} ${el.textContent.trim().replace(/^[^a-zA-Z0-9]+/, '')}`;
+          } else {
+            el.classList.remove('valid');
+            el.innerHTML = `${Auth._dotIcon()} ${el.textContent.trim().replace(/^[^a-zA-Z0-9]+/, '')}`;
+          }
+        };
+
+        updateChk('chk-len', checks.length);
+        updateChk('chk-case', checks.mixedCase);
+        updateChk('chk-num', checks.number);
+        updateChk('chk-sym', checks.symbol);
+
+        // Coincidencia de contraseña
+        updateMatch();
+      };
+
+      const updateMatch = () => {
+        const p1 = pwInp.value;
+        const p2 = pw2Inp.value;
+        if (!p2) {
+          matchHint.style.display = 'none';
+          return;
+        }
+        matchHint.style.display = 'flex';
+        if (p1 === p2) {
+          matchHint.className = 'auth-match-hint valid';
+          matchHint.innerHTML = `${Auth._checkIcon()} Las contraseñas coinciden`;
+        } else {
+          matchHint.className = 'auth-match-hint invalid';
+          matchHint.innerHTML = `✕ Las contraseñas no coinciden`;
+        }
+      };
+
+      pwInp?.addEventListener('input', updateMeter);
+      pw2Inp?.addEventListener('input', updateMatch);
+    }
+
+    // Rate Limiting en Login
+    if (isLogin) {
+      const updateLockout = () => {
+        const box = document.getElementById('portal-lockout-box');
+        const remaining = getLockoutRemainingSec();
+        if (remaining > 0) {
+          if (box) {
+            box.style.display = 'block';
+            box.innerHTML = `Demasiados intentos fallidos. Espera <strong>${remaining}s</strong> por seguridad.`;
+          }
+          if (submitBtn) submitBtn.disabled = true;
+          setTimeout(updateLockout, 1000);
+        } else {
+          if (box) box.style.display = 'none';
+          if (submitBtn) submitBtn.disabled = false;
+        }
+      };
+      updateLockout();
+    }
+
+    // Submit del Formulario
+    submitBtn?.addEventListener('click', async () => {
+      errBox.style.display = 'none';
+
+      if (isForgot) {
+        const email = document.getElementById('forgot-email')?.value.trim();
+        if (!email || !window.FBAuth?.isValidEmail(email)) {
+          errBox.textContent = 'Ingresa un correo electrónico válido.';
+          errBox.style.display = 'block';
+          return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Enviando…';
+
+        try {
+          await window.FBAuth.sendPasswordReset(email);
+          const successBox = document.getElementById('forgot-success-box');
+          if (successBox) {
+            successBox.textContent = '✓ Te hemos enviado un enlace a tu correo para restablecer tu contraseña.';
+            successBox.style.display = 'block';
+          }
+          submitBtn.style.display = 'none';
+        } catch (err) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Enviar enlace de recuperación';
+          errBox.textContent = window.FBAuth.formatError(err);
+          errBox.style.display = 'block';
+        }
+        return;
+      }
+
+      if (isRegister) {
+        const name = document.getElementById('portal-name')?.value.trim();
+        const email = document.getElementById('portal-email')?.value.trim();
+        const pw = document.getElementById('portal-pw')?.value || '';
+        const pw2 = document.getElementById('portal-pw2')?.value || '';
+
+        if (!name) {
+          errBox.textContent = 'Por favor ingresa tu nombre completo.';
+          errBox.style.display = 'block';
+          return;
+        }
+
+        if (!email || !window.FBAuth?.isValidEmail(email)) {
+          errBox.textContent = 'Por favor ingresa un correo electrónico válido.';
+          errBox.style.display = 'block';
+          return;
+        }
+
+        const { score, checks } = evaluatePasswordSecurity(pw);
+        if (!checks.length) {
+          errBox.textContent = 'La contraseña debe tener al menos 8 caracteres.';
+          errBox.style.display = 'block';
+          return;
+        }
+
+        if (score < 2) {
+          errBox.textContent = 'Por tu seguridad, combina mayúsculas, minúsculas y números.';
+          errBox.style.display = 'block';
+          return;
+        }
+
+        if (pw !== pw2) {
+          errBox.textContent = 'Las contraseñas no coinciden.';
+          errBox.style.display = 'block';
+          return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creando cuenta segura…';
+
+        try {
+          const user = await window.FBAuth.registerWithEmail(email, pw, name);
+          if (user) {
+            Auth.hideAuthPortal();
+            if (Auth._onAuthSuccess) Auth._onAuthSuccess(user);
+          }
+        } catch (err) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Crear Cuenta Segura';
+          errBox.textContent = window.FBAuth.formatError(err);
+          errBox.style.display = 'block';
+        }
+        return;
+      }
+
+      if (isLogin) {
+        if (getLockoutRemainingSec() > 0) return;
+
+        const email = document.getElementById('portal-email')?.value.trim();
+        const pw = document.getElementById('portal-pw')?.value || '';
+
+        if (!email || !pw) {
+          errBox.textContent = 'Ingresa tu correo y contraseña.';
+          errBox.style.display = 'block';
+          return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Iniciando sesión…';
+
+        try {
+          const user = await window.FBAuth.loginWithEmail(email, pw);
+          resetFailedAttempts();
+          if (user) {
+            Auth.hideAuthPortal();
+            if (Auth._onAuthSuccess) Auth._onAuthSuccess(user);
+          }
+        } catch (err) {
+          const fails = recordFailedAttempt();
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Iniciar Sesión';
+
+          if (fails >= 5) {
+            errBox.textContent = 'Has excedido los intentos permitidos. Espera 60 segundos.';
+            const updateLock = () => {
+              const remaining = getLockoutRemainingSec();
+              const box = document.getElementById('portal-lockout-box');
+              if (remaining > 0) {
+                if (box) {
+                  box.style.display = 'block';
+                  box.innerHTML = `Demasiados intentos fallidos. Espera <strong>${remaining}s</strong> por seguridad.`;
+                }
+                submitBtn.disabled = true;
+                setTimeout(updateLock, 1000);
+              } else {
+                if (box) box.style.display = 'none';
+                submitBtn.disabled = false;
+              }
+            };
+            updateLock();
+          } else {
+            errBox.textContent = window.FBAuth.formatError(err);
+          }
+          errBox.style.display = 'block';
+        }
+      }
+    });
+
+    // Enter para enviar
+    document.getElementById('portal-form')?.querySelectorAll('.auth-form-input').forEach(inp => {
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !submitBtn.disabled) submitBtn.click();
+      });
+    });
   },
 
-  /* ---- Temporizador de Auto-bloqueo por Inactividad ---- */
+  /* ============================================================
+     GESTIÓN DE PERFIL EN UI (SIDEBAR Y MOBILE)
+     ============================================================ */
+
+  updateUserProfile(user) {
+    const badge = document.getElementById('user-profile-badge');
+    const avatar = document.getElementById('user-avatar');
+    const nameEl = document.getElementById('user-name');
+    const emailEl = document.getElementById('user-email');
+    const logoutBtnMobile = document.getElementById('user-logout-btn-mobile');
+
+    if (!user) {
+      if (badge) badge.style.display = 'none';
+      if (logoutBtnMobile) logoutBtnMobile.style.display = 'none';
+      return;
+    }
+
+    const displayName = user.displayName || user.email.split('@')[0];
+    const initial = displayName.charAt(0).toUpperCase();
+
+    if (avatar) {
+      if (user.photoURL) {
+        avatar.innerHTML = `<img src="${user.photoURL}" alt="${displayName}" referrerpolicy="no-referrer" />`;
+      } else {
+        avatar.textContent = initial;
+      }
+    }
+
+    if (nameEl) nameEl.textContent = displayName;
+    if (emailEl) emailEl.textContent = user.email || '';
+    if (badge) badge.style.display = 'flex';
+    if (logoutBtnMobile) logoutBtnMobile.style.display = 'flex';
+
+    // Vincular cierre de sesión
+    const handleLogout = async () => {
+      if (confirm('¿Cerrar sesión de BudgetFlow?')) {
+        if (window.FBAuth) await window.FBAuth.logout();
+      }
+    };
+
+    document.getElementById('user-logout-btn')?.addEventListener('click', handleLogout);
+    logoutBtnMobile?.addEventListener('click', handleLogout);
+  },
+
+  /* ============================================================
+     AUTO-BLOQUEO POR INACTIVIDAD DENTRO DE LA SESIÓN
+     ============================================================ */
 
   getAutoLockMinutes() {
     const v = localStorage.getItem(AUTOLOCK_KEY);
-    return v !== null ? parseInt(v, 10) : 15; // 15 minutos por defecto
+    return v !== null ? parseInt(v, 10) : 15;
   },
 
   setAutoLockMinutes(minutes) {
@@ -249,7 +627,6 @@ const Auth = {
   _initInactivityTracker() {
     if (Auth._inactivityTimer) clearInterval(Auth._inactivityTimer);
 
-    // Eventos que indican actividad real del usuario
     const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
     let lastDebounce = 0;
     const onUserAction = () => {
@@ -262,23 +639,21 @@ const Auth = {
 
     events.forEach(evt => window.addEventListener(evt, onUserAction, { passive: true }));
 
-    // Al volver a la pestaña tras estar en segundo plano
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
         Auth._checkInactivity();
       }
     });
 
-    // Verificación periódica cada 10 segundos
     Auth._inactivityTimer = setInterval(() => {
       Auth._checkInactivity();
     }, 10000);
   },
 
   _checkInactivity() {
-    if (Auth._isLocked) return;
+    if (Auth._isLocked || !window.FBAuth?.currentUser) return;
     const mins = Auth.getAutoLockMinutes();
-    if (mins <= 0) return; // 0 = desactivado
+    if (mins <= 0) return;
 
     const elapsedMs = now() - Auth._lastActivity;
     if (elapsedMs >= mins * 60 * 1000) {
@@ -288,536 +663,18 @@ const Auth = {
 
   lockByInactivity() {
     if (Auth._isLocked) return;
-    Auth.isConfigured().then(configured => {
-      if (!configured) return;
-      Auth._isLocked = true;
-      Auth._renderOverlay('lock_inactivity');
-    });
-  },
-
-  /* ---- Sesión ---- */
-
-  /** Valida si el token local corresponde a la contraseña y no ha expirado */
-  async isSessionValid() {
-    const cfg = await Auth._loadCfg();
-    if (!cfg?.hash) return true; // Sin contraseña activa
-    const ses = getSession();
-    if (!ses) return false;
-    if (now() > ses.expiresAt) {
-      clearSession();
-      return false;
-    }
-
-    // Token seguro vinculado al secreto de dispositivo + hash actual
-    const devSec = getDeviceSecret();
-    const expected = await pbkdf2(cfg.hash + cfg.createdAt, devSec, 500);
-    return ses.token === expected;
-  },
-
-  /** Guarda sesión local firmada */
-  async createSession() {
-    const cfg = await Auth._loadCfg();
-    if (!cfg) return;
-    const devSec = getDeviceSecret();
-    const token = await pbkdf2(cfg.hash + cfg.createdAt, devSec, 500);
-    setSession(token, cfg.expiresAt);
-  },
-
-  /**
-   * Verifica la contraseña y migra hashes débiles automáticamente a PBKDF2 con Salt
-   */
-  async verify(plain) {
-    const cfg = await Auth._loadCfg();
-    if (!cfg?.hash) return true;
-
-    // Caso 1: Esquema moderno PBKDF2 con Salt
-    if (cfg.salt) {
-      const computed = await pbkdf2(plain, cfg.salt, cfg.iterations || 100000);
-      return computed === cfg.hash;
-    }
-
-    // Caso 2: Esquema legacy SHA-256 plano -> migrar al validar
-    const legacy = await sha256(plain);
-    if (legacy === cfg.hash) {
-      try {
-        const newSalt = generateSalt();
-        const newHash = await pbkdf2(plain, newSalt, 100000);
-        const upgraded = {
-          ...cfg,
-          hash: newHash,
-          salt: newSalt,
-          iterations: 100000,
-          upgradedAt: now()
-        };
-        await _setAuthCfg(upgraded);
-        Auth._cfg = upgraded;
-      } catch (e) {
-        console.warn('No se pudo auto-migrar a PBKDF2:', e);
-      }
-      return true;
-    }
-
-    return false;
-  },
-
-  /** Establece una nueva contraseña con Salt y PBKDF2 */
-  async setPassword(plain, durationDays) {
-    const salt = generateSalt();
-    const hash = await pbkdf2(plain, salt, 100000);
-    const createdAt = now();
-    const expiresAt = createdAt + daysMs(durationDays);
-    const cfg = {
-      hash,
-      salt,
-      iterations: 100000,
-      createdAt,
-      expiresAt,
-      durationDays
-    };
-
-    await _setAuthCfg(cfg);
-    Auth._cfg = cfg;
-    clearSession();
-    resetFailedAttempts();
-  },
-
-  async removePassword() {
-    await _setAuthCfg(null);
-    Auth._cfg = null;
-    clearSession();
-    resetFailedAttempts();
-  },
-
-  logout() {
-    clearSession();
-    Auth._cfg = undefined;
-    Auth.showLock();
-  },
-
-  /* ================================================================
-     UI
-     ================================================================ */
-
-  async init(onUnlocked) {
-    Auth._onUnlocked = onUnlocked;
-    Auth._initInactivityTracker();
-
-    Auth._showLoadingOverlay();
-    const configured = await Auth.isConfigured();
-    Auth._removeLoadingOverlay();
-
-    if (!configured) {
-      Auth._showSetup();
-      return;
-    }
-
-    if (await Auth.isExpired()) {
-      Auth._showExpired();
-      return;
-    }
-
-    if (await Auth.isSessionValid()) {
-      Auth._unlock();
-      return;
-    }
-
-    Auth.showLock();
-  },
-
-  showLock() {
     Auth._isLocked = true;
-    Auth._renderOverlay('lock');
+    Auth.showAuthPortal({ defaultTab: 'login' });
   },
 
-  _showLoadingOverlay() {
-    if (document.getElementById('auth-overlay')) return;
-    const el = document.createElement('div');
-    el.id = 'auth-overlay';
-    el.className = 'auth-overlay';
-    el.innerHTML = `
-      <div class="auth-card" style="align-items:center;gap:1.5rem;padding:2.5rem 2rem">
-        <div class="auth-logo">
-          <img src="icons/icon-192.png" width="40" height="40" alt="BudgetFlow" style="border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,0.3)" />
-          <span class="auth-logo-name">BudgetFlow</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:.6rem;color:var(--text-secondary,#71717a);font-size:.875rem">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-            style="animation:auth-spin 1s linear infinite;flex-shrink:0">
-            <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-          </svg>
-          Conectando de forma segura…
-        </div>
-      </div>`;
-    document.body.appendChild(el);
-  },
-
-  _removeLoadingOverlay() {
-    document.getElementById('auth-overlay')?.remove();
-  },
-
-  _unlock() {
-    Auth._isLocked = false;
-    Auth.recordActivity();
-    resetFailedAttempts();
-
-    const overlay = document.getElementById('auth-overlay');
-    if (overlay) {
-      overlay.classList.add('auth-fade-out');
-      setTimeout(() => overlay.remove(), 320);
-    }
-    if (Auth._onUnlocked) Auth._onUnlocked();
-
-    Auth.needsRenewalWarning().then(warn => {
-      if (warn) {
-        Auth.expiresInDays().then(d => {
-          setTimeout(() => {
-            if (window.toast) toast(`⚠️ Tu contraseña vence en ${d} día${d !== 1 ? 's' : ''}. Cámbiala en Ajustes de Seguridad.`, 5000);
-          }, 1200);
-        });
-      }
-    });
-  },
-
-  _showSetup()   { Auth._isLocked = true; Auth._renderOverlay('setup');   },
-  _showExpired() { Auth._isLocked = true; Auth._renderOverlay('expired'); },
-
-  _renderOverlay(mode) {
-    document.getElementById('auth-overlay')?.remove();
-
-    const el = document.createElement('div');
-    el.id = 'auth-overlay';
-    el.className = 'auth-overlay';
-
-    const DURATION_OPTIONS = [
-      { value: 15,  label: '15 días' },
-      { value: 30,  label: '30 días' },
-      { value: 60,  label: '2 meses' },
-      { value: 90,  label: '3 meses' },
-      { value: 180, label: '6 meses' },
-    ];
-
-    const durationSelect = `
-      <div class="auth-field">
-        <label class="auth-label">Vigencia de la contraseña</label>
-        <select class="auth-select" id="auth-duration">
-          ${DURATION_OPTIONS.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
-        </select>
-      </div>`;
-
-    const logo = `
-      <div class="auth-logo">
-        <img src="icons/icon-192.png" width="40" height="40" alt="BudgetFlow" style="border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,0.3)" />
-        <span class="auth-logo-name">BudgetFlow</span>
-      </div>`;
-
-    if (mode === 'lock' || mode === 'lock_inactivity') {
-      const isInactivity = mode === 'lock_inactivity';
-      el.innerHTML = `
-        <div class="auth-card">
-          ${logo}
-          <div class="auth-heading">
-            <h2>${isInactivity ? 'Bloqueo por inactividad' : 'Acceso protegido'}</h2>
-            <p class="auth-sub">${isInactivity ? 'La app se bloqueó tras un tiempo sin uso. Ingresa tu contraseña.' : 'Ingresa tu contraseña para continuar'}</p>
-          </div>
-          <div id="auth-lockout-box" class="auth-lockout-box" style="display:none"></div>
-          <div class="auth-field">
-            <label class="auth-label">Contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-pw" class="auth-input"
-                placeholder="••••••••" autocomplete="current-password" autofocus />
-              <button type="button" class="auth-eye" id="auth-eye" aria-label="Ver contraseña">
-                ${Auth._eyeIcon(false)}
-              </button>
-            </div>
-          </div>
-          ${!isInactivity ? `
-          <label class="auth-remember">
-            <input type="checkbox" id="auth-remember" />
-            <span class="auth-checkbox-custom"></span>
-            <span>Recordarme en este dispositivo</span>
-          </label>` : ''}
-          <div class="auth-error" id="auth-error" style="display:none"></div>
-          <button class="auth-btn" id="auth-submit">Entrar</button>
-        </div>`;
-    }
-
-    if (mode === 'setup') {
-      el.innerHTML = `
-        <div class="auth-card">
-          ${logo}
-          <div class="auth-heading">
-            <h2>Crear contraseña</h2>
-            <p class="auth-sub">Protege tu BudgetFlow con cifrado PBKDF2 y bloqueo automático.</p>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Nueva contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-pw" class="auth-input"
-                placeholder="Mínimo 6 caracteres" autocomplete="new-password" autofocus />
-              <button type="button" class="auth-eye" id="auth-eye">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Confirmar contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-pw2" class="auth-input"
-                placeholder="Repite la contraseña" autocomplete="new-password" />
-              <button type="button" class="auth-eye" id="auth-eye2">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          ${durationSelect}
-          <div class="auth-error" id="auth-error" style="display:none"></div>
-          <button class="auth-btn" id="auth-submit">Crear contraseña</button>
-        </div>`;
-    }
-
-    if (mode === 'expired') {
-      el.innerHTML = `
-        <div class="auth-card">
-          ${logo}
-          <div class="auth-heading">
-            <div class="auth-badge-warn">Contraseña vencida</div>
-            <h2>Tiempo de renovar</h2>
-            <p class="auth-sub">El período de vigencia ha concluido. Define una nueva clave para continuar.</p>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Contraseña actual</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-old-pw" class="auth-input"
-                placeholder="••••••••" autocomplete="current-password" autofocus />
-              <button type="button" class="auth-eye" id="auth-eye-old">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Nueva contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-pw" class="auth-input"
-                placeholder="Mínimo 6 caracteres" autocomplete="new-password" />
-              <button type="button" class="auth-eye" id="auth-eye">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          <div class="auth-field">
-            <label class="auth-label">Confirmar nueva contraseña</label>
-            <div class="auth-input-wrap">
-              <input type="password" id="auth-pw2" class="auth-input"
-                placeholder="Repite la contraseña" autocomplete="new-password" />
-              <button type="button" class="auth-eye" id="auth-eye2">${Auth._eyeIcon(false)}</button>
-            </div>
-          </div>
-          ${durationSelect}
-          <div class="auth-error" id="auth-error" style="display:none"></div>
-          <button class="auth-btn" id="auth-submit">Renovar contraseña</button>
-        </div>`;
-    }
-
-    document.body.appendChild(el);
-    Auth._bindOverlayEvents(mode);
-  },
-
-  _eyeIcon(visible) {
-    return visible
-      ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-           <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-           <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-           <line x1="1" y1="1" x2="23" y2="23"/>
-         </svg>`
-      : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-           <circle cx="12" cy="12" r="3"/>
-         </svg>`;
-  },
-
-  _bindEye(btnId, inputId) {
-    const btn = document.getElementById(btnId);
-    const inp = document.getElementById(inputId);
-    if (!btn || !inp) return;
-    let visible = false;
-    btn.addEventListener('click', () => {
-      visible = !visible;
-      inp.type = visible ? 'text' : 'password';
-      btn.innerHTML = Auth._eyeIcon(visible);
-    });
-  },
-
-  _showError(msg) {
-    const el = document.getElementById('auth-error');
-    if (el) {
-      el.textContent = msg;
-      el.style.display = msg ? 'block' : 'none';
-    }
-  },
-
-  _updateLockoutUI() {
-    const box = document.getElementById('auth-lockout-box');
-    const submit = document.getElementById('auth-submit');
-    const pwInput = document.getElementById('auth-pw');
-    if (!box) return;
-
-    const remaining = getLockoutRemainingSec();
-    if (remaining > 0) {
-      box.style.display = 'block';
-      box.innerHTML = `
-        <div style="display:flex;align-items:center;gap:.5rem">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.5">
-            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-          </svg>
-          <span>Acceso suspendido por demasiados intentos. Espera <strong>${remaining}s</strong></span>
-        </div>`;
-      if (submit) submit.disabled = true;
-      if (pwInput) pwInput.disabled = true;
-
-      setTimeout(() => Auth._updateLockoutUI(), 1000);
-    } else {
-      box.style.display = 'none';
-      if (submit) submit.disabled = false;
-      if (pwInput) {
-        pwInput.disabled = false;
-        pwInput.focus();
-      }
-    }
-  },
-
-  _bindOverlayEvents(mode) {
-    Auth._bindEye('auth-eye',     'auth-pw');
-    Auth._bindEye('auth-eye2',    'auth-pw2');
-    Auth._bindEye('auth-eye-old', 'auth-old-pw');
-
-    const submit = document.getElementById('auth-submit');
-    if (!submit) return;
-
-    // Verificar si hay bloqueo de fuerza bruta activo
-    if (mode === 'lock' || mode === 'lock_inactivity') {
-      Auth._updateLockoutUI();
-    }
-
-    document.getElementById('auth-overlay').querySelectorAll('.auth-input').forEach(inp => {
-      inp.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && !submit.disabled) submit.click();
-      });
-    });
-
-    if (mode === 'lock' || mode === 'lock_inactivity') {
-      submit.addEventListener('click', async () => {
-        if (getLockoutRemainingSec() > 0) return;
-
-        const pw = document.getElementById('auth-pw')?.value || '';
-        const rem = document.getElementById('auth-remember')?.checked;
-        Auth._showError('');
-
-        submit.disabled = true;
-        submit.textContent = 'Verificando con PBKDF2…';
-
-        // Pequeño retardo defensivo si ya hubo más de 2 fallos
-        const currentFails = parseInt(sessionStorage.getItem(FAILS_KEY) || '0', 10);
-        if (currentFails >= 3) {
-          await new Promise(r => setTimeout(r, 2000));
-        }
-
-        const ok = await Auth.verify(pw);
-        if (!ok) {
-          const fails = recordFailedAttempt();
-          if (fails >= 5) {
-            Auth._showError('Contraseña incorrecta. Has excedido los intentos permitidos.');
-            Auth._updateLockoutUI();
-          } else {
-            const left = 5 - fails;
-            Auth._showError(`Contraseña incorrecta. Te quedan ${left} intento${left !== 1 ? 's' : ''}.`);
-            submit.disabled = false;
-            submit.textContent = 'Entrar';
-            const pwInp = document.getElementById('auth-pw');
-            if (pwInp) { pwInp.value = ''; pwInp.focus(); }
-          }
-          return;
-        }
-
-        resetFailedAttempts();
-        if (rem) await Auth.createSession();
-        Auth._unlock();
-      });
-    }
-
-    if (mode === 'setup') {
-      submit.addEventListener('click', async () => {
-        const pw  = document.getElementById('auth-pw')?.value  || '';
-        const pw2 = document.getElementById('auth-pw2')?.value || '';
-        const dur = parseInt(document.getElementById('auth-duration')?.value || '30', 10);
-        Auth._showError('');
-
-        if (pw.length < 6) {
-          Auth._showError('La contraseña debe tener al menos 6 caracteres.');
-          return;
-        }
-        if (pw !== pw2) {
-          Auth._showError('Las contraseñas no coinciden.');
-          return;
-        }
-
-        submit.disabled = true;
-        submit.textContent = 'Generando clave cifrada…';
-        await Auth.setPassword(pw, dur);
-        Auth._unlock();
-      });
-    }
-
-    if (mode === 'expired') {
-      submit.addEventListener('click', async () => {
-        const oldPw = document.getElementById('auth-old-pw')?.value || '';
-        const pw    = document.getElementById('auth-pw')?.value     || '';
-        const pw2   = document.getElementById('auth-pw2')?.value    || '';
-        const dur   = parseInt(document.getElementById('auth-duration')?.value || '30', 10);
-        Auth._showError('');
-
-        submit.disabled = true;
-        submit.textContent = 'Verificando…';
-
-        const oldOk = await Auth.verify(oldPw);
-        if (!oldOk) {
-          Auth._showError('La contraseña actual es incorrecta.');
-          submit.disabled = false;
-          submit.textContent = 'Renovar contraseña';
-          return;
-        }
-        if (pw.length < 6) {
-          Auth._showError('La nueva contraseña debe tener al menos 6 caracteres.');
-          submit.disabled = false;
-          submit.textContent = 'Renovar contraseña';
-          return;
-        }
-        if (pw !== pw2) {
-          Auth._showError('Las contraseñas no coinciden.');
-          submit.disabled = false;
-          submit.textContent = 'Renovar contraseña';
-          return;
-        }
-
-        await Auth.setPassword(pw, dur);
-        Auth._unlock();
-      });
-    }
-  },
-
-  /* ---- Panel de Seguridad Integrado ---- */
+  /* ---- Modal de Configuración de Seguridad en la app ---- */
 
   async renderSettingsPanel() {
-    const cfg = await Auth._loadCfg();
-    const configured = !!cfg?.hash;
-    const d = await Auth.expiresInDays();
-    const daysLabel = configured
-      ? (d === Infinity ? '—' : (d <= 0 ? 'Vencida' : `${d} día${d !== 1 ? 's' : ''} restantes`))
-      : '—';
-    const warn = configured && d <= 7 && d > 0;
-    const expiresDate = cfg?.expiresAt
-      ? new Date(cfg.expiresAt).toLocaleDateString('es-CR', { day: '2-digit', month: 'short', year: 'numeric' })
-      : '—';
-
+    const user = window.FBAuth?.currentUser;
     const currentAutoLock = Auth.getAutoLockMinutes();
-    const isFBConfigured = window.FBAuth && window.FBAuth.isConfigured();
-    const fbUser = window.FBAuth?.currentUser;
 
     return `
       <div class="auth-settings-panel" id="auth-settings-panel">
-        
-        <!-- Hero de Seguridad -->
         <div class="auth-security-hero">
           <div class="auth-security-hero-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -825,42 +682,36 @@ const Auth = {
             </svg>
           </div>
           <div>
-            <div class="auth-security-hero-title">Seguridad y Cuentas</div>
-            <div class="auth-security-hero-subtitle">Protección PBKDF2 con Salt aleatorio, bloqueo por inactividad y sincronización multi-cuenta con Firebase.</div>
+            <div class="auth-security-hero-title">Cuenta y Seguridad</div>
+            <div class="auth-security-hero-subtitle">Tus presupuestos están protegidos y aislados bajo tu cuenta de Firebase.</div>
           </div>
         </div>
 
-        <!-- Fila: Contraseña de Acceso -->
         <div class="auth-settings-row">
           <div>
             <div class="auth-settings-title">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
               </svg>
-              Contraseña de acceso local
+              Cuenta Activa
             </div>
             <div class="auth-settings-meta">
-              ${configured
-                ? `Cifrado PBKDF2 · Vence el <strong>${expiresDate}</strong> · <span class="${warn ? 'auth-warn-text' : ''}">${daysLabel}</span>`
-                : 'Sin contraseña configurada'}
+              ${user ? `Conectado como <strong>${user.email || user.displayName}</strong>` : 'Sin sesión activa'}
             </div>
           </div>
-          <button class="auth-settings-btn" id="auth-settings-change">
-            ${configured ? 'Cambiar' : 'Crear'}
-          </button>
+          ${user ? `<button class="auth-settings-btn danger" id="auth-settings-logout-btn">Cerrar sesión</button>` : ''}
         </div>
 
-        <!-- Fila: Tiempo de Bloqueo por Inactividad -->
         <div class="auth-settings-row">
           <div>
             <div class="auth-settings-title">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
               </svg>
-              Tiempo de bloqueo por inactividad
+              Auto-bloqueo por inactividad
             </div>
             <div class="auth-settings-meta">
-              Bloquea la aplicación automáticamente si no interactúas con ella
+              Vuelve a pedir autenticación si te ausentas
             </div>
           </div>
           <select class="auth-select" id="auth-autolock-select" style="max-width:130px;padding:.35rem .5rem">
@@ -871,477 +722,21 @@ const Auth = {
             <option value="0"  ${currentAutoLock === 0 ? 'selected' : ''}>Desactivado</option>
           </select>
         </div>
-
-        <!-- Fila: Cuentas Multi-Usuario con Firebase -->
-        <div class="auth-settings-row">
-          <div>
-            <div class="auth-settings-title">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
-              Cuentas en la nube (Firebase Firestore)
-            </div>
-            <div class="auth-settings-meta">
-              ${isFBConfigured
-                ? (fbUser ? `Conectado como <strong>${fbUser.email || fbUser.displayName || 'Usuario'}</strong>` : 'Conectado a Firestore · Sin sesión activa')
-                : 'Conexión lista · Pega las credenciales de Firebase para habilitar cuentas'}
-            </div>
-          </div>
-          <button class="auth-settings-btn" id="auth-settings-firebase" style="background:var(--primary);color:#fff;border-color:var(--primary)">
-            ${isFBConfigured ? (fbUser ? 'Mi Cuenta' : 'Iniciar Sesión') : 'Configurar'}
-          </button>
-        </div>
-
-        ${configured ? `
-        <div class="auth-settings-row" style="padding-top:.5rem;border-top:1px solid var(--border)">
-          <span class="auth-settings-meta">Cerrar sesión en este dispositivo</span>
-          <button class="auth-settings-btn danger" id="auth-settings-logout">Cerrar sesión</button>
-        </div>
-        <div class="auth-settings-row" style="padding-top:.5rem;border-top:1px solid var(--border)">
-          <span class="auth-settings-meta">Eliminar contraseña de todos los dispositivos</span>
-          <button class="auth-settings-btn danger" id="auth-settings-remove">Eliminar</button>
-        </div>` : ''}
       </div>`;
   },
 
   bindSettingsEvents() {
-    document.getElementById('auth-settings-change')?.addEventListener('click', () => {
-      const secOverlay = document.getElementById('security-modal-overlay');
-      if (secOverlay) secOverlay.style.display = 'none';
-      Auth._showChangeModal();
-    });
-
     document.getElementById('auth-autolock-select')?.addEventListener('change', (e) => {
       const mins = parseInt(e.target.value, 10);
       Auth.setAutoLockMinutes(mins);
       if (window.toast) toast(`⏱️ Auto-bloqueo ajustado a ${mins === 0 ? 'Desactivado' : mins + ' min'}`);
     });
 
-    document.getElementById('auth-settings-firebase')?.addEventListener('click', () => {
-      const secOverlay = document.getElementById('security-modal-overlay');
-      if (secOverlay) secOverlay.style.display = 'none';
-      Auth._showFirebaseModal();
-    });
-
-    document.getElementById('auth-settings-logout')?.addEventListener('click', () => {
-      if (confirm('¿Cerrar sesión en este dispositivo?')) Auth.logout();
-    });
-
-    document.getElementById('auth-settings-remove')?.addEventListener('click', () => {
-      Auth._showConfirmRemoveModal();
-    });
-  },
-
-  /** Modal para gestionar cuenta Firebase o configurar credenciales */
-  _showFirebaseModal() {
-    document.getElementById('fb-modal-overlay')?.remove();
-
-    const isConfigured = window.FBAuth && window.FBAuth.isConfigured();
-    const user = window.FBAuth?.currentUser;
-
-    const el = document.createElement('div');
-    el.id = 'fb-modal-overlay';
-    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem;animation:fadeIn .15s ease';
-
-    let contentHtml = '';
-
-    if (!isConfigured) {
-      // Formulario para pegar la configuración de Firebase Console
-      const cfg = window.FBAuth?.getConfig() || {};
-      contentHtml = `
-        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
-          <p style="font-size:.84rem;color:var(--text-2);line-height:1.5">
-            Para que cada persona tenga su propia cuenta con Firebase Auth y su propio presupuesto en Cloud Firestore, pega la configuración de tu proyecto de Firebase.
-          </p>
-          <div class="auth-field">
-            <label class="auth-label">Configuración JSON o valores:</label>
-            <textarea id="fb-cfg-input" class="auth-input" rows="6" style="font-family:monospace;font-size:.78rem;line-height:1.4" placeholder='{
-  "apiKey": "AIzaSy...",
-  "authDomain": "tu-app.firebaseapp.com",
-  "projectId": "tu-app",
-  "storageBucket": "tu-app.appspot.com",
-  "messagingSenderId": "...",
-  "appId": "..."
-}'></textarea>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
-            <a href="FIREBASE_SETUP.md" target="_blank" style="font-size:.78rem;color:var(--primary);text-decoration:underline">Ver guía paso a paso</a>
-            <div style="display:flex;gap:.5rem">
-              <button id="fb-modal-close-btn" class="auth-settings-btn">Cancelar</button>
-              <button id="fb-save-cfg-btn" class="auth-btn" style="width:auto;padding:.4rem .9rem">Guardar y Conectar</button>
-            </div>
-          </div>
-        </div>`;
-    } else if (user) {
-      // Usuario conectado actualmente
-      contentHtml = `
-        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
-          <div style="display:flex;align-items:center;gap:.75rem">
-            <div style="width:40px;height:40px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem">
-              ${(user.displayName || user.email || 'U').charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <div style="font-weight:600;font-size:.92rem">${user.displayName || 'Usuario Firebase'}</div>
-              <div style="font-size:.78rem;color:var(--text-2)">${user.email}</div>
-            </div>
-          </div>
-          <div style="font-size:.8rem;color:var(--text-2);padding:.6rem .8rem;background:var(--bg-alt);border-radius:var(--radius);line-height:1.4">
-            Tus presupuestos, categorías y gastos se sincronizan automáticamente en tu propia cuenta en Cloud Firestore.
-          </div>
-          <div style="display:flex;justify-content:space-between;gap:.5rem;padding-top:.5rem">
-            <button id="fb-reset-cfg-btn" class="auth-settings-btn" style="color:var(--text-3)">Cambiar proyecto Firebase</button>
-            <div style="display:flex;gap:.5rem">
-              <button id="fb-modal-close-btn" class="auth-settings-btn">Cerrar</button>
-              <button id="fb-logout-btn" class="auth-settings-btn danger">Cerrar sesión</button>
-            </div>
-          </div>
-        </div>`;
-    } else {
-      // Conectado pero no autenticado: Iniciar sesión o Registrarse
-      contentHtml = `
-        <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
-          <div style="display:flex;gap:.5rem;border-bottom:1px solid var(--border);padding-bottom:.5rem">
-            <button id="fb-tab-login" style="flex:1;padding:.4rem;border:none;background:transparent;font-weight:600;color:var(--text);border-bottom:2px solid var(--primary);cursor:pointer">Iniciar Sesión</button>
-            <button id="fb-tab-register" style="flex:1;padding:.4rem;border:none;background:transparent;font-weight:500;color:var(--text-2);cursor:pointer">Registrarse</button>
-          </div>
-
-          <div id="fb-auth-form" style="display:flex;flex-direction:column;gap:.75rem">
-            <div id="fb-name-group" class="auth-field" style="display:none">
-              <label class="auth-label">Tu Nombre</label>
-              <input type="text" id="fb-name" class="auth-input" placeholder="Ej. José Pérez" />
-            </div>
-            <div class="auth-field">
-              <label class="auth-label">Correo Electrónico</label>
-              <input type="email" id="fb-email" class="auth-input" placeholder="nombre@correo.com" />
-            </div>
-            <div class="auth-field">
-              <label class="auth-label">Contraseña</label>
-              <input type="password" id="fb-pw" class="auth-input" placeholder="••••••••" />
-            </div>
-            <div class="auth-error" id="fb-error" style="display:none"></div>
-            <button class="auth-btn" id="fb-submit-btn">Entrar con Correo</button>
-            
-            <div style="display:flex;align-items:center;gap:.5rem;margin:.25rem 0">
-              <div style="flex:1;height:1px;background:var(--border)"></div>
-              <span style="font-size:.75rem;color:var(--text-3)">o</span>
-              <div style="flex:1;height:1px;background:var(--border)"></div>
-            </div>
-
-            <button type="button" id="fb-google-btn" class="auth-settings-btn" style="display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.55rem;font-weight:600">
-              <svg width="16" height="16" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
-                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"/>
-                <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
-                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-              </svg>
-              Continuar con Google
-            </button>
-          </div>
-
-          <div style="display:flex;justify-content:flex-end;gap:.5rem;padding-top:.5rem">
-            <button id="fb-modal-close-btn" class="auth-settings-btn">Cerrar</button>
-          </div>
-        </div>`;
-    }
-
-    el.innerHTML = `
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:420px;box-shadow:var(--shadow-md);overflow:hidden">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border)">
-          <div style="display:flex;align-items:center;gap:.5rem">
-            <img src="icons/icon-192.png" width="22" height="22" alt="BudgetFlow" style="border-radius:5px" />
-            <h3 style="margin:0;font-size:1rem;font-weight:600">Firebase Multi-Usuario</h3>
-          </div>
-          <button id="fb-modal-x-btn" style="background:transparent;border:none;color:var(--text-2);cursor:pointer">✕</button>
-        </div>
-        ${contentHtml}
-      </div>`;
-
-    document.body.appendChild(el);
-
-    const close = () => el.remove();
-    document.getElementById('fb-modal-x-btn')?.addEventListener('click', close);
-    document.getElementById('fb-modal-close-btn')?.addEventListener('click', close);
-
-    // Guardar configuración
-    document.getElementById('fb-save-cfg-btn')?.addEventListener('click', () => {
-      const txt = document.getElementById('fb-cfg-input')?.value.trim();
-      if (!txt) return;
-      try {
-        let parsed = null;
-        if (txt.startsWith('{')) {
-          parsed = JSON.parse(txt);
-        } else {
-          // Extraer variables si se pegó código JS
-          const matchApiKey = txt.match(/apiKey:\s*["']([^"']+)["']/);
-          const matchProjectId = txt.match(/projectId:\s*["']([^"']+)["']/);
-          if (matchApiKey && matchProjectId) {
-            parsed = {
-              apiKey: matchApiKey[1],
-              projectId: matchProjectId[1],
-              authDomain: (txt.match(/authDomain:\s*["']([^"']+)["']/) || [])[1] || `${matchProjectId[1]}.firebaseapp.com`,
-              storageBucket: (txt.match(/storageBucket:\s*["']([^"']+)["']/) || [])[1] || '',
-              messagingSenderId: (txt.match(/messagingSenderId:\s*["']([^"']+)["']/) || [])[1] || '',
-              appId: (txt.match(/appId:\s*["']([^"']+)["']/) || [])[1] || ''
-            };
-          }
-        }
-        if (!parsed || !parsed.apiKey || !parsed.projectId) {
-          alert('Configuración inválida. Asegúrate de incluir al menos apiKey y projectId.');
-          return;
-        }
-        window.FBAuth.saveConfig(parsed);
-      } catch (err) {
-        alert('Error analizando la configuración: ' + err.message);
+    document.getElementById('auth-settings-logout-btn')?.addEventListener('click', async () => {
+      if (confirm('¿Cerrar sesión de BudgetFlow?')) {
+        document.getElementById('security-modal-overlay').style.display = 'none';
+        if (window.FBAuth) await window.FBAuth.logout();
       }
-    });
-
-    document.getElementById('fb-reset-cfg-btn')?.addEventListener('click', () => {
-      if (confirm('¿Restablecer configuración de Firebase?')) {
-        window.FBAuth.resetConfig();
-      }
-    });
-
-    document.getElementById('fb-logout-btn')?.addEventListener('click', async () => {
-      await window.FBAuth.logout();
-      close();
-      if (window.toast) toast('Sesión de Firebase cerrada');
-      window.location.reload();
-    });
-
-    // Login/Register tabs
-    let isRegisterMode = false;
-    const tabLogin = document.getElementById('fb-tab-login');
-    const tabReg = document.getElementById('fb-tab-register');
-    const nameGrp = document.getElementById('fb-name-group');
-    const submitBtn = document.getElementById('fb-submit-btn');
-    const errBox = document.getElementById('fb-error');
-
-    tabLogin?.addEventListener('click', () => {
-      isRegisterMode = false;
-      tabLogin.style.borderBottom = '2px solid var(--primary)';
-      tabLogin.style.color = 'var(--text)';
-      tabReg.style.borderBottom = 'none';
-      tabReg.style.color = 'var(--text-2)';
-      if (nameGrp) nameGrp.style.display = 'none';
-      if (submitBtn) submitBtn.textContent = 'Entrar con Correo';
-      if (errBox) errBox.style.display = 'none';
-    });
-
-    tabReg?.addEventListener('click', () => {
-      isRegisterMode = true;
-      tabReg.style.borderBottom = '2px solid var(--primary)';
-      tabReg.style.color = 'var(--text)';
-      tabLogin.style.borderBottom = 'none';
-      tabLogin.style.color = 'var(--text-2)';
-      if (nameGrp) nameGrp.style.display = 'block';
-      if (submitBtn) submitBtn.textContent = 'Crear Cuenta';
-      if (errBox) errBox.style.display = 'none';
-    });
-
-    submitBtn?.addEventListener('click', async () => {
-      const email = document.getElementById('fb-email')?.value.trim();
-      const pw = document.getElementById('fb-pw')?.value;
-      const name = document.getElementById('fb-name')?.value.trim();
-
-      if (!email || !pw) {
-        if (errBox) { errBox.textContent = 'Ingresa correo y contraseña'; errBox.style.display = 'block'; }
-        return;
-      }
-
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Procesando…';
-
-      try {
-        if (isRegisterMode) {
-          await window.FBAuth.registerWithEmail(email, pw, name);
-          if (window.toast) toast('¡Cuenta creada con éxito!');
-        } else {
-          await window.FBAuth.loginWithEmail(email, pw);
-          if (window.toast) toast('¡Bienvenido!');
-        }
-        close();
-        window.location.reload();
-      } catch (e) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = isRegisterMode ? 'Crear Cuenta' : 'Entrar con Correo';
-        if (errBox) {
-          errBox.textContent = e.message || 'Error de autenticación';
-          errBox.style.display = 'block';
-        }
-      }
-    });
-
-    document.getElementById('fb-google-btn')?.addEventListener('click', async () => {
-      try {
-        await window.FBAuth.loginWithGoogle();
-        close();
-        if (window.toast) toast('¡Sesión con Google iniciada!');
-        window.location.reload();
-      } catch (e) {
-        if (errBox) {
-          errBox.textContent = e.message || 'Error con Google Sign-In';
-          errBox.style.display = 'block';
-        }
-      }
-    });
-  },
-
-  _showConfirmRemoveModal() {
-    const secOverlay = document.getElementById('security-modal-overlay');
-    if (secOverlay) secOverlay.style.display = 'none';
-
-    const el = document.createElement('div');
-    el.id = 'auth-confirm-overlay';
-    el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem;animation:fadeIn .15s ease';
-    el.innerHTML = `
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:380px;padding:1.5rem;box-shadow:var(--shadow-md)">
-        <div style="display:flex;align-items:flex-start;gap:.75rem;margin-bottom:1.25rem">
-          <div style="flex-shrink:0;width:2.25rem;height:2.25rem;border-radius:50%;background:color-mix(in srgb,var(--danger) 12%,transparent);display:flex;align-items:center;justify-content:center">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2.5">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-          </div>
-          <div>
-            <div style="font-weight:600;font-size:.9375rem;margin-bottom:.3rem">¿Eliminar contraseña local?</div>
-            <div style="font-size:.8125rem;color:var(--text-secondary);line-height:1.45">Cualquier persona con acceso a esta URL podrá abrir la interfaz sin pedir contraseña.</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:.625rem;justify-content:flex-end">
-          <button id="auth-confirm-cancel" class="auth-settings-btn">Cancelar</button>
-          <button id="auth-confirm-delete" class="auth-settings-btn danger" style="font-weight:600">Eliminar</button>
-        </div>
-      </div>`;
-    document.body.appendChild(el);
-
-    const close = () => el.remove();
-    document.getElementById('auth-confirm-cancel').addEventListener('click', close);
-    document.getElementById('auth-confirm-delete').addEventListener('click', async () => {
-      close();
-      await Auth.removePassword();
-      Auth._cfg = null;
-      if (window.toast) toast('🔓 Contraseña eliminada');
-    });
-  },
-
-  _showChangeModal() {
-    document.getElementById('auth-change-overlay')?.remove();
-
-    Auth.isConfigured().then(configured => {
-      Auth.getDurationDays().then(currentDur => {
-        const DURATION_OPTIONS = [15, 30, 60, 90, 180];
-        const durationLabels = { 15:'15 días', 30:'30 días', 60:'2 meses', 90:'3 meses', 180:'6 meses' };
-
-        const el = document.createElement('div');
-        el.id = 'auth-change-overlay';
-        el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:1rem;animation:fadeIn .15s ease';
-        el.innerHTML = `
-          <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);width:100%;max-width:400px;box-shadow:var(--shadow-md);overflow:hidden">
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border)">
-              <h3 style="margin:0;font-size:1rem;font-weight:600">${configured ? 'Cambiar contraseña' : 'Crear contraseña'}</h3>
-              <button id="auth-change-close" style="display:flex;align-items:center;justify-content:center;width:1.75rem;height:1.75rem;border-radius:var(--radius);border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-              </button>
-            </div>
-            <div style="padding:1.25rem;display:flex;flex-direction:column;gap:.875rem">
-              ${configured ? `
-              <div>
-                <label class="auth-label" style="display:block;margin-bottom:.35rem">Contraseña actual</label>
-                <div class="auth-input-wrap">
-                  <input type="password" id="ach-old-pw" class="auth-input" placeholder="••••••••" autocomplete="current-password" autofocus />
-                  <button type="button" class="auth-eye" id="ach-eye-old">${Auth._eyeIcon(false)}</button>
-                </div>
-              </div>` : ''}
-              <div>
-                <label class="auth-label" style="display:block;margin-bottom:.35rem">Nueva contraseña</label>
-                <div class="auth-input-wrap">
-                  <input type="password" id="ach-new-pw" class="auth-input" placeholder="Mínimo 6 caracteres" autocomplete="new-password" ${!configured ? 'autofocus' : ''} />
-                  <button type="button" class="auth-eye" id="ach-eye-new">${Auth._eyeIcon(false)}</button>
-                </div>
-              </div>
-              <div>
-                <label class="auth-label" style="display:block;margin-bottom:.35rem">Confirmar contraseña</label>
-                <div class="auth-input-wrap">
-                  <input type="password" id="ach-new-pw2" class="auth-input" placeholder="Repite la contraseña" autocomplete="new-password" />
-                  <button type="button" class="auth-eye" id="ach-eye-new2">${Auth._eyeIcon(false)}</button>
-                </div>
-              </div>
-              <div>
-                <label class="auth-label" style="display:block;margin-bottom:.35rem">Vigencia</label>
-                <select class="auth-select" id="ach-duration">
-                  ${DURATION_OPTIONS.map(v => `<option value="${v}" ${v === currentDur ? 'selected' : ''}>${durationLabels[v]}</option>`).join('')}
-                </select>
-              </div>
-              <div class="auth-error" id="ach-error" style="display:none"></div>
-              <div style="display:flex;gap:.625rem;padding-top:.125rem">
-                <button id="ach-cancel" class="auth-settings-btn" style="flex-shrink:0">Cancelar</button>
-                <button id="ach-save" class="auth-btn" style="flex:1">Guardar con PBKDF2</button>
-              </div>
-            </div>
-          </div>`;
-
-        document.body.appendChild(el);
-
-        Auth._bindEye('ach-eye-old',  'ach-old-pw');
-        Auth._bindEye('ach-eye-new',  'ach-new-pw');
-        Auth._bindEye('ach-eye-new2', 'ach-new-pw2');
-
-        const showErr = (msg) => {
-          const errEl = document.getElementById('ach-error');
-          if (!errEl) return;
-          errEl.textContent = msg;
-          errEl.style.display = msg ? 'block' : 'none';
-        };
-
-        const close = () => el.remove();
-        document.getElementById('auth-change-close').addEventListener('click', close);
-        document.getElementById('ach-cancel').addEventListener('click', close);
-
-        el.querySelectorAll('.auth-input').forEach(inp => {
-          inp.addEventListener('keydown', e => {
-            if (e.key === 'Enter') document.getElementById('ach-save')?.click();
-          });
-        });
-
-        document.getElementById('ach-save').addEventListener('click', async () => {
-          const oldPw = document.getElementById('ach-old-pw')?.value || '';
-          const pw    = document.getElementById('ach-new-pw')?.value  || '';
-          const pw2   = document.getElementById('ach-new-pw2')?.value || '';
-          const dur   = parseInt(document.getElementById('ach-duration')?.value || '30', 10);
-          showErr('');
-
-          if (configured) {
-            const oldOk = await Auth.verify(oldPw);
-            if (!oldOk) {
-              showErr('La contraseña actual es incorrecta.');
-              return;
-            }
-          }
-          if (pw.length < 6) {
-            showErr('La contraseña debe tener al menos 6 caracteres.');
-            return;
-          }
-          if (pw !== pw2) {
-            showErr('Las contraseñas no coinciden.');
-            return;
-          }
-
-          const btn = document.getElementById('ach-save');
-          btn.disabled = true;
-          btn.textContent = 'Guardando…';
-
-          await Auth.setPassword(pw, dur);
-          close();
-          if (window.toast) toast('🔒 Contraseña actualizada');
-
-          const panel = document.getElementById('auth-settings-panel');
-          if (panel) {
-            panel.outerHTML = await Auth.renderSettingsPanel();
-            Auth.bindSettingsEvents();
-          }
-        });
-      });
     });
   }
 };

@@ -146,6 +146,42 @@ const FBAuth = {
     return firebaseAuth.sendPasswordResetEmail(email);
   },
 
+  /* ---- Helpers de Validación y Errores ---- */
+
+  isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim());
+  },
+
+  formatError(err) {
+    if (!err) return 'Ha ocurrido un error inesperado.';
+    const code = err.code || '';
+    switch (code) {
+      case 'auth/invalid-email':
+        return 'El correo electrónico no es válido.';
+      case 'auth/user-disabled':
+        return 'Esta cuenta ha sido inhabilitada por el administrador.';
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+      case 'auth/invalid-credential':
+      case 'auth/invalid-login-credentials':
+        return 'Correo o contraseña incorrectos.';
+      case 'auth/email-already-in-use':
+        return 'Ya existe una cuenta registrada con este correo.';
+      case 'auth/weak-password':
+        return 'La contraseña es muy débil. Debe tener al menos 8 caracteres.';
+      case 'auth/too-many-requests':
+        return 'Demasiados intentos fallidos. Por seguridad, espera un momento.';
+      case 'auth/popup-closed-by-user':
+        return 'Se canceló el inicio de sesión con Google.';
+      case 'auth/popup-blocked':
+        return 'La ventana emergente de Google fue bloqueada por tu navegador.';
+      case 'auth/network-request-failed':
+        return 'Error de conexión a internet. Verifica tu red.';
+      default:
+        return err.message || 'Error al procesar la solicitud.';
+    }
+  },
+
   /* ---- Firestore State Storage per User ---- */
 
   getUserDocRef(userId) {
