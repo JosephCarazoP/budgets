@@ -558,8 +558,8 @@ function renderSources() {
         <div class="source-meta">
           ${badge}
           <div class="source-actions">
-            <button class="btn-ghost" onclick="startEditSource('${s.id}')">Editar</button>
-            <button class="btn-danger" onclick="deleteSource('${s.id}')">Eliminar</button>
+            <button class="btn-secondary btn-sm" onclick="startEditSource('${s.id}')">Editar</button>
+            <button class="btn-danger btn-sm" onclick="deleteSource('${s.id}')">Eliminar</button>
           </div>
         </div>
       </div>
@@ -576,13 +576,15 @@ function renderSources() {
 
         ${distChips ? `<div class="dist-list">${distChips}</div>` : ''}
         <div class="dist-list" style="margin-top:.5rem">
-          ${state.assignments.filter((a) => a.sourceId === s.id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6).map((a)=>`
-            <span class="dist-chip">
-              ${a.category}: ${money(a.amount)}
-              <button type="button" class="btn-link" onclick="startEditAssignment('${a.id}')">Editar</button>
-              <button type="button" class="btn-link" onclick="deleteAssignment('${a.id}')">Eliminar</button>
-            </span>
-          `).join('')}
+          ${state.assignments.filter((a) => a.sourceId === s.id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8).map((a)=>{
+            const cColor = state.categories.find(c=>c.name===a.category)?.color || '#888';
+            return `<span class="dist-chip">
+              <span class="dot" style="background:${cColor}"></span>
+              <span>${a.category}: <b>${money(a.amount)}</b></span>
+              <button type="button" class="chip-action-btn" title="Editar monto" onclick="startEditAssignment('${a.id}')">✎</button>
+              <button type="button" class="chip-action-btn danger" title="Eliminar asignación" onclick="deleteAssignment('${a.id}')">✕</button>
+            </span>`;
+          }).join('')}
         </div>
 
         <form class="dist-form" style="margin-top:.75rem" onsubmit="addDistribution(event,'${s.id}')">
@@ -590,7 +592,7 @@ function renderSources() {
             ${state.categories.map((c) => `<option value="${c.name}">${c.name}</option>`).join('')}
           </select>
           <input name="amount" type="number" min="0" step="0.01" placeholder="Monto a asignar" required />
-          <button type="submit" class="btn-primary" style="white-space:nowrap">Asignar</button>
+          <button type="submit" class="btn-primary btn-sm" style="white-space:nowrap">Asignar</button>
         </form>
       </div>
     </div>`;
@@ -722,8 +724,8 @@ function renderCategories() {
   // chips
   $('category-list').innerHTML = state.categories.map((c) =>
     `<span class="chip" style="background:${c.color}">${c.name}
-      <button type="button" class="btn-link" onclick="editCategory('${c.name.replace(/'/g, "\\'")}')">✎</button>
-      <button type="button" class="btn-link" onclick="deleteCategory('${c.name.replace(/'/g, "\\'")}')">✕</button>
+      <button type="button" class="chip-action-btn" title="Editar" onclick="editCategory('${c.name.replace(/'/g, "\\'")}')">✎</button>
+      <button type="button" class="chip-action-btn danger" title="Eliminar" onclick="deleteCategory('${c.name.replace(/'/g, "\\'")}')">✕</button>
     </span>`).join('');
 
   // selects
@@ -749,7 +751,7 @@ function renderCategories() {
           <span>Gast: <b>${money(x.spent)}</b></span>
           <span>Disp: <b>${money(x.assigned - x.spent)}</b></span>
           ${(x.assigned - x.spent) > 0
-    ? `<button type="button" class="btn-link btn-reassign" onclick="moveRemainingBudget('${x.sourceId}','${cat.replace(/'/g, "\\'")}')">Reasignar sobrante</button>`
+    ? `<button type="button" class="btn-secondary btn-sm" onclick="moveRemainingBudget('${x.sourceId}','${cat.replace(/'/g, "\\'")}')">Reasignar</button>`
     : ''}
         </div>
       </div>`).join('');
@@ -854,14 +856,21 @@ function renderExpensesList() {
       const src = state.sources.find((s) => s.id === e.sourceId);
       const cat = state.categories.find((c) => c.name === e.category);
       return `<div class="expense-row">
-        <div><div class="exp-desc">${e.desc}</div></div>
-        <div><span class="exp-tag"><span style="width:7px;height:7px;border-radius:50%;background:${cat?.color || '#888'}"></span>${e.category}</span></div>
-        <div class="exp-tag" style="width:fit-content">${src?.name || '—'}</div>
-        <div class="exp-amount">-${money(e.amount)}</div>
-        <div class="exp-date">${fmt(e.date)}</div>
-        <div class="expense-actions">
-          <button class="expense-action-btn" onclick="editExpense('${e.id}')">Editar</button>
-          <button class="expense-action-btn danger" onclick="deleteExpense('${e.id}')">Eliminar</button>
+        <div class="exp-col-desc">
+          <div class="exp-desc">${e.desc}</div>
+          <div class="exp-meta-inline">
+            <span class="exp-tag"><span class="exp-tag-dot" style="background:${cat?.color || '#888'}"></span>${e.category}</span>
+            <span class="exp-tag">${src?.name || '—'}</span>
+            <span class="exp-date">${fmt(e.date)}</span>
+          </div>
+        </div>
+        <div class="exp-col-cat"><span class="exp-tag"><span class="exp-tag-dot" style="background:${cat?.color || '#888'}"></span>${e.category}</span></div>
+        <div class="exp-col-src"><span class="exp-tag">${src?.name || '—'}</span></div>
+        <div class="exp-col-amt"><span class="exp-amount">-${money(e.amount)}</span></div>
+        <div class="exp-col-date"><span class="exp-date">${fmt(e.date)}</span></div>
+        <div class="exp-col-actions expense-actions">
+          <button type="button" class="btn-secondary btn-sm" onclick="editExpense('${e.id}')">Editar</button>
+          <button type="button" class="btn-danger btn-sm" onclick="deleteExpense('${e.id}')">Eliminar</button>
         </div>
       </div>`;
     }).join('');
@@ -1340,17 +1349,19 @@ function renderCatSummary() {
           </div>
           <span class="cat-sum-pct">${Math.round(pct)}%</span>
         </div>
-        <div class="cat-sum-col">
-          <div class="label">Asignado</div>
-          <div class="val">${money(d.assigned)}</div>
-        </div>
-        <div class="cat-sum-col">
-          <div class="label">Gastado</div>
-          <div class="val spent">-${money(d.spent)}</div>
-        </div>
-        <div class="cat-sum-col">
-          <div class="label">Disponible</div>
-          <div class="val ${over ? 'over' : 'remaining'}">${over ? '-' : ''}${money(Math.abs(remaining))}</div>
+        <div class="cat-sum-values">
+          <div class="cat-sum-col">
+            <div class="label">Asignado</div>
+            <div class="val">${money(d.assigned)}</div>
+          </div>
+          <div class="cat-sum-col">
+            <div class="label">Gastado</div>
+            <div class="val spent">-${money(d.spent)}</div>
+          </div>
+          <div class="cat-sum-col">
+            <div class="label">Disponible</div>
+            <div class="val ${over ? 'over' : 'remaining'}">${over ? '-' : ''}${money(Math.abs(remaining))}</div>
+          </div>
         </div>
       </div>`;
     }).join('');

@@ -699,7 +699,7 @@ const Auth = {
               ${user ? `Conectado como <strong>${user.email || user.displayName}</strong>` : 'Sin sesión activa'}
             </div>
           </div>
-          ${user ? `<button class="auth-settings-btn danger" id="auth-settings-logout-btn">Cerrar sesión</button>` : ''}
+          ${user ? `<button class="btn-danger btn-sm" id="auth-settings-logout-btn">Cerrar sesión</button>` : ''}
         </div>
 
         <div class="auth-settings-row">
@@ -714,7 +714,7 @@ const Auth = {
               Vuelve a pedir autenticación si te ausentas
             </div>
           </div>
-          <select class="auth-select" id="auth-autolock-select" style="max-width:130px;padding:.35rem .5rem">
+          <select id="auth-autolock-select" style="max-width:130px">
             <option value="5"  ${currentAutoLock === 5 ? 'selected' : ''}>5 minutos</option>
             <option value="15" ${currentAutoLock === 15 ? 'selected' : ''}>15 minutos</option>
             <option value="30" ${currentAutoLock === 30 ? 'selected' : ''}>30 minutos</option>
