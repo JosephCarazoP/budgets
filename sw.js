@@ -1,4 +1,4 @@
-const VERSION = 'v4';
+const VERSION = 'v5';
 const CACHE = `budgetflow-static-${VERSION}`;
 const APP_SHELL = [
   '/',

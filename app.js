@@ -386,6 +386,11 @@ function applyTheme() {
   $('icon-moon-m').style.display  = dark ? 'none'  : '';
   $('icon-sun-m').style.display   = dark ? ''      : 'none';
   $('theme-label').textContent    = dark ? 'Modo claro' : 'Modo oscuro';
+
+  const themeMeta = $('theme-color-meta');
+  if (themeMeta) {
+    themeMeta.setAttribute('content', dark ? '#08080a' : '#ffffff');
+  }
 }
 
 function toggleTheme() { state.theme = state.theme === 'dark' ? 'light' : 'dark'; applyTheme(); save(); }

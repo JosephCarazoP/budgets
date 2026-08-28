@@ -9,11 +9,16 @@
   inset: 0;
   z-index: 99999;
   background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.25rem;
+  padding-top: calc(1.25rem + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(1.25rem + env(safe-area-inset-left, 0px));
+  padding-right: calc(1.25rem + env(safe-area-inset-right, 0px));
   overflow-y: auto;
   animation: authFadeIn 0.15s ease-out;
 }
@@ -362,4 +367,30 @@
   opacity: 0.45;
   cursor: not-allowed;
   transform: none;
+}
+
+@media (max-width: 480px) {
+  .auth-portal-card {
+    padding: 1.75rem 1.25rem;
+    border-radius: var(--radius-lg);
+  }
+
+  .auth-form-input {
+    height: 44px;
+    font-size: 16px; /* Prevents auto-zoom on iOS */
+    border-radius: var(--radius-md);
+  }
+
+  .auth-submit-btn,
+  .auth-google-btn {
+    height: 44px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: var(--radius-md);
+  }
+
+  .auth-portal-tab {
+    padding: 0.55rem 0.5rem;
+    font-size: 0.8125rem;
+  }
 }
