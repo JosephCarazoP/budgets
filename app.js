@@ -155,6 +155,131 @@ const $$ = (sel, ctx = document) => ctx.querySelectorAll(sel);
 
 const money = (n) => `₡${Number(n || 0).toLocaleString('es-CR', { maximumFractionDigits: 2 })}`;
 const uid   = () => Math.random().toString(36).slice(2, 10);
+
+/**
+ * Convierte cualquier valor (formateado o número) a un float de JavaScript válido.
+ */
+function parseAmount(val) {
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  if (!val) return 0;
+  let str = String(val).trim();
+  if (str.includes(',') && str.includes('.')) {
+    if (str.indexOf(',') < str.indexOf('.')) {
+      str = str.replace(/,/g, '');
+    } else {
+      str = str.replace(/\./g, '').replace(',', '.');
+    }
+  } else if (str.includes(',')) {
+    const parts = str.split(',');
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
+      str = str.replace(/,/g, '');
+    } else {
+      str = str.replace(',', '.');
+    }
+  } else if (str.includes('.')) {
+    const parts = str.split('.');
+    if (parts.length > 2) {
+      str = str.replace(/\./g, '');
+    }
+  }
+  const n = parseFloat(str);
+  return isNaN(n) ? 0 : n;
+}
+
+/**
+ * Formatea dinámicamente una cadena a formato numérico con comas para miles y punto para decimales.
+ */
+function formatAmountString(rawVal) {
+  if (rawVal === undefined || rawVal === null || rawVal === '') return '';
+  let str = String(rawVal);
+  
+  let clean = str.replace(/[^\d.,]/g, '');
+  if (!clean) return '';
+
+  let decimalIdx = -1;
+  const lastDot = clean.lastIndexOf('.');
+  const lastComma = clean.lastIndexOf(',');
+  
+  if (lastDot !== -1 && lastComma !== -1) {
+    decimalIdx = Math.max(lastDot, lastComma);
+  } else if (lastDot !== -1) {
+    decimalIdx = lastDot;
+  } else if (lastComma !== -1) {
+    decimalIdx = lastComma;
+  }
+
+  let integerPart = '';
+  let decimalPart = null;
+
+  if (decimalIdx !== -1) {
+    integerPart = clean.slice(0, decimalIdx).replace(/[^\d]/g, '');
+    decimalPart = clean.slice(decimalIdx + 1).replace(/[^\d]/g, '').slice(0, 2);
+  } else {
+    integerPart = clean.replace(/[^\d]/g, '');
+  }
+
+  if (integerPart.length > 1) {
+    integerPart = integerPart.replace(/^0+/, '') || '0';
+  } else if (integerPart.length === 0 && decimalPart !== null) {
+    integerPart = '0';
+  }
+
+  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+  if (decimalPart !== null) {
+    return `${formattedInteger}.${decimalPart}`;
+  } else if (decimalIdx !== -1) {
+    return `${formattedInteger}.`;
+  }
+  return formattedInteger;
+}
+
+/**
+ * Aplica el formateador de montos en tiempo real a un elemento input.
+ */
+function attachAmountFormatter(input) {
+  if (!input) return;
+  
+  input.type = 'text';
+  input.setAttribute('inputmode', 'decimal');
+  input.setAttribute('autocomplete', 'off');
+
+  if (input.value) {
+    input.value = formatAmountString(input.value);
+  }
+
+  if (input.dataset.amountFormatted) return;
+  input.dataset.amountFormatted = 'true';
+
+  input.addEventListener('input', () => {
+    const selStart = input.selectionStart || 0;
+    const oldVal = input.value;
+    const rawBeforeCursor = oldVal.slice(0, selStart).replace(/[^\d.,]/g, '');
+    
+    const newVal = formatAmountString(oldVal);
+    input.value = newVal;
+
+    let newCursor = 0;
+    let rawCount = 0;
+    for (let i = 0; i < newVal.length; i++) {
+      if (rawCount >= rawBeforeCursor.length) break;
+      if (/[\d.,]/.test(newVal[i])) {
+        rawCount++;
+      }
+      newCursor = i + 1;
+    }
+    
+    try {
+      input.setSelectionRange(newCursor, newCursor);
+    } catch (_) {}
+  });
+
+  input.addEventListener('blur', () => {
+    if (input.value) {
+      input.value = formatAmountString(input.value);
+    }
+  });
+}
 const fmt   = (iso) => { if (!iso) return '—'; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
 const compareByDateDesc = (a, b) => {
   const dateA = String(a?.date || '0000-00-00');
@@ -445,7 +570,7 @@ function moveRemainingBudget(sourceId, fromCategory) {
       <p class="muted">Fuente: <b>${source.name}</b> · Categoría: <b>${fromCategory}</b> · Disponible: <b>${money(remaining)}</b></p>
       <div class="field">
         <label>Monto a mover (₡)</label>
-        <input id="reassign-amount" type="number" min="0.01" step="0.01" value="${remaining}" required />
+        <input id="reassign-amount" type="text" inputmode="decimal" value="${formatAmountString(remaining)}" required />
       </div>
       <div class="field">
         <label>Destino</label>
@@ -461,6 +586,7 @@ function moveRemainingBudget(sourceId, fromCategory) {
     </form>
   `;
   overlay.style.display = 'flex';
+  attachAmountFormatter($('reassign-amount'));
   _buildCsel('reassign-target', { isCategory: true });
 
   $('reassign-cancel')?.addEventListener('click', () => { overlay.style.display = 'none'; });
@@ -470,7 +596,7 @@ function moveRemainingBudget(sourceId, fromCategory) {
 
   $('reassign-form')?.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const amount = Number($('reassign-amount').value);
+    const amount = parseAmount($('reassign-amount').value);
     const target = $('reassign-target').value;
     if (!Number.isFinite(amount) || amount <= 0 || amount > remaining) {
       toast(`⚠️ Monto inválido. Máximo disponible: ${money(remaining)}`);
@@ -802,7 +928,7 @@ window.openSourceModal = function(sourceId = null) {
           </label>
           <div class="amount-input-wrap">
             <span class="currency-symbol">₡</span>
-            <input id="modal-src-amount" type="number" min="0.01" step="0.01" placeholder="0.00" value="${s ? s.amount : ''}" required />
+            <input id="modal-src-amount" type="text" inputmode="decimal" placeholder="0.00" value="${s ? formatAmountString(s.amount) : ''}" required />
           </div>
         </div>
 
@@ -837,6 +963,7 @@ window.openSourceModal = function(sourceId = null) {
 
   _buildCsel('modal-src-status', { isStatus: true });
 
+  attachAmountFormatter($('modal-src-amount'));
   const nameInput = $('modal-src-name');
   overlay.style.display = 'flex';
   nameInput.focus();
@@ -856,7 +983,7 @@ window.openSourceModal = function(sourceId = null) {
     ev.preventDefault();
     const payload = {
       name: $('modal-src-name').value.trim(),
-      amount: Number($('modal-src-amount').value),
+      amount: parseAmount($('modal-src-amount').value),
       date: $('modal-src-date').value,
       status: $('modal-src-status').value
     };
@@ -1073,7 +1200,7 @@ window.openSourceAssignmentsModal = function(sourceId) {
                   <span>${a.category}</span>
                 </div>
                 <div class="assignment-input-inline">
-                  <input type="number" min="0.01" step="0.01" value="${a.amount}" id="input-asg-${a.id}" data-asg-id="${a.id}" />
+                  <input type="text" inputmode="decimal" value="${formatAmountString(a.amount)}" id="input-asg-${a.id}" data-asg-id="${a.id}" />
                   <button type="button" class="btn-secondary btn-sm" onclick="saveAssignmentInline('${a.id}', '${sourceId}')" title="Guardar cambios">Guardar</button>
                   <button type="button" class="btn-danger btn-sm" onclick="removeAssignmentFromModal('${a.id}', '${sourceId}')" title="Eliminar asignación">✕</button>
                 </div>
@@ -1086,7 +1213,7 @@ window.openSourceAssignmentsModal = function(sourceId) {
           <h4>+ Asignar presupuesto a categoría</h4>
           <form id="modal-asg-add-form" class="assignment-add-form">
             <select id="modal-asg-category" required>${catOpts}</select>
-            <input id="modal-asg-amount" type="number" min="0.01" step="0.01" placeholder="Monto (₡)" required />
+            <input id="modal-asg-amount" type="text" inputmode="decimal" placeholder="Monto (₡)" required />
             <button type="submit" class="btn-primary btn-sm">Asignar</button>
           </form>
         </div>
@@ -1098,6 +1225,11 @@ window.openSourceAssignmentsModal = function(sourceId) {
     `;
 
     _buildCsel('modal-asg-category', { isCategory: true });
+
+    attachAmountFormatter($('modal-asg-amount'));
+    state.assignments.filter((a) => a.sourceId === sourceId).forEach((a) => {
+      attachAmountFormatter($(`input-asg-${a.id}`));
+    });
 
     // Scroll focus handler
     content.querySelectorAll('input, select').forEach((inp) => {
@@ -1112,7 +1244,7 @@ window.openSourceAssignmentsModal = function(sourceId) {
     $('modal-asg-add-form')?.addEventListener('submit', (ev) => {
       ev.preventDefault();
       const cat = $('modal-asg-category').value;
-      const amt = Number($('modal-asg-amount').value);
+      const amt = parseAmount($('modal-asg-amount').value);
       if (!cat || !amt || amt <= 0) return;
 
       const curDist = { ...(freshSource.distribution || {}) };
@@ -1144,7 +1276,7 @@ window.openSourceAssignmentsModal = function(sourceId) {
 window.saveAssignmentInline = function(assignmentId, sourceId) {
   const input = $(`input-asg-${assignmentId}`);
   if (!input) return;
-  const newAmt = Number(input.value);
+  const newAmt = parseAmount(input.value);
   if (!Number.isFinite(newAmt) || newAmt <= 0) {
     toast('Monto inválido');
     return;
@@ -1478,7 +1610,7 @@ window.openExpenseModal = function(expenseId = null) {
             </label>
             <div class="amount-input-wrap">
               <span class="currency-symbol">₡</span>
-              <input id="modal-exp-amount" type="number" min="0.01" step="0.01" placeholder="0.00" value="${ex ? ex.amount : ''}" required autocomplete="off" />
+              <input id="modal-exp-amount" type="text" inputmode="decimal" placeholder="0.00" value="${ex ? formatAmountString(ex.amount) : ''}" required autocomplete="off" />
             </div>
           </div>
 
@@ -1574,7 +1706,7 @@ window.openExpenseModal = function(expenseId = null) {
   function updateModalSim() {
     const sourceId = srcSelect.value;
     const category = catSelect.value;
-    const amount = Number(amountInput.value || 0);
+    const amount = parseAmount(amountInput.value || 0);
     if (!sourceId || !category) { simBox.style.display = 'none'; return; }
 
     const source = state.sources.find((s) => s.id === sourceId);
@@ -1617,6 +1749,8 @@ window.openExpenseModal = function(expenseId = null) {
   catSelect.addEventListener('change', updateModalSim);
   amountInput.addEventListener('input', updateModalSim);
 
+  attachAmountFormatter(amountInput);
+
   overlay.style.display = 'flex';
   amountInput.focus();
 
@@ -1635,7 +1769,7 @@ window.openExpenseModal = function(expenseId = null) {
     ev.preventDefault();
     const sourceId = srcSelect.value;
     const category = catSelect.value;
-    const amount = Number(amountInput.value);
+    const amount = parseAmount(amountInput.value);
     const date = $('modal-exp-date').value || todayStr;
     const desc = $('modal-exp-desc').value.trim();
 
