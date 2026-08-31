@@ -163,25 +163,19 @@ function parseAmount(val) {
   if (typeof val === 'number') return isNaN(val) ? 0 : val;
   if (!val) return 0;
   let str = String(val).trim();
-  if (str.includes(',') && str.includes('.')) {
-    if (str.indexOf(',') < str.indexOf('.')) {
-      str = str.replace(/,/g, '');
-    } else {
-      str = str.replace(/\./g, '').replace(',', '.');
-    }
+  
+  if (str.includes('.')) {
+    str = str.replace(/,/g, '');
   } else if (str.includes(',')) {
-    const parts = str.split(',');
-    if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) {
-      str = str.replace(/,/g, '');
+    const lastCommaIdx = str.lastIndexOf(',');
+    const charsAfterComma = str.slice(lastCommaIdx + 1);
+    if (charsAfterComma.length <= 2) {
+      str = str.slice(0, lastCommaIdx).replace(/,/g, '') + '.' + charsAfterComma;
     } else {
-      str = str.replace(',', '.');
-    }
-  } else if (str.includes('.')) {
-    const parts = str.split('.');
-    if (parts.length > 2) {
-      str = str.replace(/\./g, '');
+      str = str.replace(/,/g, '');
     }
   }
+  
   const n = parseFloat(str);
   return isNaN(n) ? 0 : n;
 }
@@ -192,44 +186,43 @@ function parseAmount(val) {
 function formatAmountString(rawVal) {
   if (rawVal === undefined || rawVal === null || rawVal === '') return '';
   let str = String(rawVal);
-  
-  let clean = str.replace(/[^\d.,]/g, '');
-  if (!clean) return '';
 
-  let decimalIdx = -1;
-  const lastDot = clean.lastIndexOf('.');
-  const lastComma = clean.lastIndexOf(',');
-  
-  if (lastDot !== -1 && lastComma !== -1) {
-    decimalIdx = Math.max(lastDot, lastComma);
-  } else if (lastDot !== -1) {
-    decimalIdx = lastDot;
-  } else if (lastComma !== -1) {
-    decimalIdx = lastComma;
-  }
+  let hasDot = str.includes('.');
+  let hasComma = str.includes(',');
 
-  let integerPart = '';
-  let decimalPart = null;
+  let decimalStr = null;
+  let mainStr = str;
 
-  if (decimalIdx !== -1) {
-    integerPart = clean.slice(0, decimalIdx).replace(/[^\d]/g, '');
-    decimalPart = clean.slice(decimalIdx + 1).replace(/[^\d]/g, '').slice(0, 2);
+  if (hasDot) {
+    const parts = str.split('.');
+    mainStr = parts.slice(0, -1).join('').replace(/[^\d]/g, '');
+    decimalStr = parts[parts.length - 1].replace(/[^\d]/g, '').slice(0, 2);
+  } else if (hasComma) {
+    const lastCommaIdx = str.lastIndexOf(',');
+    const charsAfterComma = str.slice(lastCommaIdx + 1);
+    
+    if (charsAfterComma.length !== 3 && charsAfterComma.length <= 2) {
+      mainStr = str.slice(0, lastCommaIdx).replace(/[^\d]/g, '');
+      decimalStr = charsAfterComma.replace(/[^\d]/g, '').slice(0, 2);
+    } else {
+      mainStr = str.replace(/[^\d]/g, '');
+    }
   } else {
-    integerPart = clean.replace(/[^\d]/g, '');
+    mainStr = str.replace(/[^\d]/g, '');
   }
 
-  if (integerPart.length > 1) {
-    integerPart = integerPart.replace(/^0+/, '') || '0';
-  } else if (integerPart.length === 0 && decimalPart !== null) {
-    integerPart = '0';
+  if (mainStr.length > 1) {
+    mainStr = mainStr.replace(/^0+/, '') || '0';
+  } else if (mainStr.length === 0 && decimalStr !== null) {
+    mainStr = '0';
   }
 
-  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  if (!mainStr && decimalStr === null) return '';
 
-  if (decimalPart !== null) {
-    return `${formattedInteger}.${decimalPart}`;
-  } else if (decimalIdx !== -1) {
-    return `${formattedInteger}.`;
+  const formattedInteger = mainStr.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+  if (decimalStr !== null) {
+    return `${formattedInteger}.${decimalStr}`;
   }
   return formattedInteger;
 }
@@ -254,7 +247,8 @@ function attachAmountFormatter(input) {
   input.addEventListener('input', () => {
     const selStart = input.selectionStart || 0;
     const oldVal = input.value;
-    const rawBeforeCursor = oldVal.slice(0, selStart).replace(/[^\d.,]/g, '');
+    
+    const rawBeforeCursor = oldVal.slice(0, selStart).replace(/[^\d.]/g, '');
     
     const newVal = formatAmountString(oldVal);
     input.value = newVal;
@@ -263,7 +257,7 @@ function attachAmountFormatter(input) {
     let rawCount = 0;
     for (let i = 0; i < newVal.length; i++) {
       if (rawCount >= rawBeforeCursor.length) break;
-      if (/[\d.,]/.test(newVal[i])) {
+      if (/[\d.]/.test(newVal[i])) {
         rawCount++;
       }
       newCursor = i + 1;
