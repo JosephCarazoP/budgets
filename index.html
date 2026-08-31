@@ -199,29 +199,12 @@
         <div class="page-header">
           <div>
             <h1>Categorías</h1>
-            <p class="muted">Vista consolidada de todas las categorías</p>
+            <p class="muted">Presupuesto consolidado y balance en tiempo real</p>
           </div>
-          <button type="button" class="icon-btn quick-add-btn" id="toggle-category-form" title="Agregar categoría">+</button>
-        </div>
-
-        <div class="card collapsible-card" id="category-form-card" style="display:none">
-          <div class="card-header">
-            <h3>Nueva categoría</h3>
-          </div>
-          <form id="category-form" class="form-row">
-            <div class="field" style="flex:1">
-              <label>Nombre</label>
-              <input id="category-name" placeholder="Nombre de categoría" required />
-            </div>
-            <div class="field color-field">
-              <label>Color</label>
-              <input id="category-color" type="color" value="#3b82f6" />
-            </div>
-            <div class="field" style="align-self:flex-end">
-              <button type="submit" class="btn-primary">Crear</button>
-            </div>
-          </form>
-          <div id="category-list" class="chips"></div>
+          <button type="button" class="btn-primary" id="add-category-btn">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nueva categoría
+          </button>
         </div>
 
         <div id="categories"></div>
@@ -232,42 +215,92 @@
         <div class="page-header">
           <div>
             <h1>Gastos</h1>
-            <p class="muted">Registra y revisa tus gastos</p>
+            <p class="muted">Registra y revisa tus movimientos financieros</p>
           </div>
           <button type="button" class="icon-btn quick-add-btn" id="toggle-expense-form" title="Registrar gasto">+</button>
         </div>
 
         <div class="card collapsible-card" id="expense-form-card" style="display:none">
           <div class="card-header">
-            <h3>Registrar gasto</h3>
+            <h3 id="expense-form-title">Registrar nuevo gasto</h3>
           </div>
-          <form id="expense-form" class="form-grid">
+          <form id="expense-form" class="form-grid expense-smart-form">
+            <!-- Step 1: Fuente -->
             <div class="field">
-              <label>Fuente</label>
+              <label class="field-label-step">
+                <span class="step-num">1</span>
+                Fuente de ingreso
+              </label>
               <select id="expense-source" required></select>
+              <span class="field-hint" id="expense-source-hint">Selecciona de dónde sale el dinero</span>
             </div>
+
+            <!-- Step 2: Categoría -->
             <div class="field">
-              <label>Categoría</label>
+              <label class="field-label-step">
+                <span class="step-num">2</span>
+                Categoría asignada
+              </label>
               <select id="expense-category" required></select>
+              <span class="field-hint" id="expense-category-hint">Categorías con presupuesto en esta fuente</span>
             </div>
-            <div id="expense-budget-info" class="expense-budget-info" style="display:none"></div>
+
+            <!-- Alert if source has no categories -->
+            <div id="expense-no-cat-alert" class="expense-no-cat-alert" style="display:none">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <div>
+                <b>Esta fuente no tiene categorías asignadas</b>
+                <p>Para registrar un gasto, primero asigna presupuesto a una categoría en esta fuente.</p>
+              </div>
+              <button type="button" class="btn-secondary btn-sm" id="expense-goto-source-btn">Asignar ahora →</button>
+            </div>
+
+            <!-- Step 3: Monto -->
             <div class="field">
-              <label>Monto (₡)</label>
-              <input id="expense-amount" type="number" min="0.01" step="0.01" placeholder="0.00" required />
+              <label class="field-label-step">
+                <span class="step-num">3</span>
+                Monto del gasto (₡)
+              </label>
+              <div class="amount-input-wrap">
+                <span class="currency-symbol">₡</span>
+                <input id="expense-amount" type="number" min="0.01" step="0.01" placeholder="0.00" required autocomplete="off" />
+              </div>
             </div>
+
+            <!-- Step 4: Fecha -->
             <div class="field">
-              <label>Descripción</label>
-              <input id="expense-desc" placeholder="¿En qué lo gastaste?" required />
+              <label class="field-label-step">
+                <span class="step-num">4</span>
+                Fecha del gasto
+              </label>
+              <input id="expense-date" type="date" required />
             </div>
-            <div class="field form-actions">
-              <button type="submit" class="btn-primary">Registrar gasto</button>
+
+            <!-- Step 5: Descripción -->
+            <div class="field field-full">
+              <label class="field-label-step">
+                <span class="step-num">5</span>
+                Descripción / Concepto
+              </label>
+              <input id="expense-desc" placeholder="Ej. Supermercado, gasolina, almuerzo, farmacia..." required />
+            </div>
+
+            <!-- Live Simulation / Balance preview -->
+            <div id="expense-sim-box" class="expense-sim-box" style="display:none"></div>
+
+            <div class="field form-actions field-full">
+              <button type="submit" class="btn-primary" id="expense-submit-btn">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Guardar gasto
+              </button>
+              <button type="button" class="btn-ghost" id="expense-cancel-btn">Cancelar</button>
             </div>
           </form>
         </div>
 
         <div class="card">
           <div class="card-header">
-            <h3>Historial</h3>
+            <h3>Historial de gastos</h3>
             <div class="filters">
               <select id="filter-source"><option value="">Todas las fuentes</option></select>
               <select id="filter-category"><option value="">Todas las categorías</option></select>

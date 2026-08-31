@@ -530,7 +530,7 @@ function renderRecentExpenses() {
 }
 
 /* ============================================================
-   RENDER SOURCES
+   RENDER SOURCES (ULTRA-COMPACT WITH INFO & ASSIGNMENT MODALS)
    ============================================================ */
 
 function renderSources() {
@@ -543,66 +543,341 @@ function renderSources() {
   }
 
   el.innerHTML = state.sources.map((s) => {
-    const t   = sourceTotals(s);
-    const pct = Number(s.amount) ? Math.min(100, (t.assigned / Number(s.amount)) * 100) : 0;
+    const t = sourceTotals(s);
+    // % of source assigned to categories
+    const pctAssigned = Number(s.amount) ? Math.min(100, (t.assigned / Number(s.amount)) * 100) : 0;
+    // % of assigned money spent
+    const pctSpent = t.assigned > 0 ? Math.min(100, (t.spent / t.assigned) * 100) : 0;
+
     const badge = s.status === 'recibido'
       ? `<span class="badge badge-received">✓ Recibido</span>`
       : `<span class="badge badge-pending">⏳ Pendiente</span>`;
 
-    const distChips = Object.entries(s.distribution || {}).map(([cat, amt]) => {
-      const color = state.categories.find((c) => c.name === cat)?.color || '#64748b';
-      return `<span class="dist-chip"><span class="dot" style="background:${color}"></span>${cat}: ${money(amt)}</span>`;
-    }).join('');
+    const catCount = Object.keys(s.distribution || {}).length;
 
     return `<div class="source-card">
       <div class="source-header">
-        <div>
-          <div class="source-name">${s.name}</div>
-          <div class="exp-sub" style="margin-top:.15rem">Esperado: ${fmt(s.date)}</div>
+        <div class="source-title-wrap">
+          <span class="source-name">${s.name}</span>
+          <span class="badge badge-cats">${catCount} ${catCount === 1 ? 'cat.' : 'cats.'}</span>
         </div>
         <div class="source-meta">
           ${badge}
           <div class="source-actions">
-            <button class="btn-secondary btn-sm" onclick="startEditSource('${s.id}')">Editar</button>
-            <button class="btn-danger btn-sm" onclick="deleteSource('${s.id}')">Eliminar</button>
+            <button type="button" class="btn-icon-info" title="Ver desglose y estadísticas completas" onclick="openSourceInfoModal('${s.id}')">i</button>
+            <button type="button" class="btn-secondary btn-sm" onclick="openSourceAssignmentsModal('${s.id}')">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Asignaciones
+            </button>
+            <button type="button" class="btn-secondary btn-sm" onclick="startEditSource('${s.id}')">Editar</button>
+            <button type="button" class="btn-danger btn-sm" onclick="deleteSource('${s.id}')">✕</button>
           </div>
         </div>
       </div>
 
-      <div class="source-body">
-        <div class="source-stats">
-          <div class="stat"><span class="stat-label">Total</span><span class="stat-value">${money(s.amount)}</span></div>
-          <div class="stat"><span class="stat-label">Asignado</span><span class="stat-value">${money(t.assigned)}</span></div>
-          <div class="stat"><span class="stat-label">Sin asignar</span><span class="stat-value" style="color:${t.unassigned < 0 ? 'var(--danger)' : 'inherit'}">${money(t.unassigned)}</span></div>
-          <div class="stat"><span class="stat-label">Gastado</span><span class="stat-value" style="color:var(--danger)">${money(t.spent)}</span></div>
+      <!-- Compact body: Only Asignado & Gastado on the outside -->
+      <div class="source-compact-body">
+        <div class="source-compact-metrics">
+          <div class="compact-metric">
+            <span class="label">Asignado:</span>
+            <span class="val">${money(t.assigned)}</span>
+          </div>
+          <div class="compact-metric">
+            <span class="label">Gastado:</span>
+            <span class="val spent">${money(t.spent)}</span>
+          </div>
         </div>
-
-        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
-
-        ${distChips ? `<div class="dist-list">${distChips}</div>` : ''}
-        <div class="dist-list" style="margin-top:.5rem">
-          ${state.assignments.filter((a) => a.sourceId === s.id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8).map((a)=>{
-            const cColor = state.categories.find(c=>c.name===a.category)?.color || '#888';
-            return `<span class="dist-chip">
-              <span class="dot" style="background:${cColor}"></span>
-              <span>${a.category}: <b>${money(a.amount)}</b></span>
-              <button type="button" class="chip-action-btn" title="Editar monto" onclick="startEditAssignment('${a.id}')">✎</button>
-              <button type="button" class="chip-action-btn danger" title="Eliminar asignación" onclick="deleteAssignment('${a.id}')">✕</button>
-            </span>`;
-          }).join('')}
+        <div class="source-compact-bar-wrap" title="${Math.round(pctSpent)}% de lo asignado gastado">
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:${pctSpent}%; background:${pctSpent >= 90 ? 'var(--danger)' : 'var(--text)'}"></div>
+          </div>
+          <span class="source-compact-pct">${Math.round(pctSpent)}%</span>
         </div>
-
-        <form class="dist-form" style="margin-top:.75rem" onsubmit="addDistribution(event,'${s.id}')">
-          <select name="category" required>
-            ${state.categories.map((c) => `<option value="${c.name}">${c.name}</option>`).join('')}
-          </select>
-          <input name="amount" type="number" min="0" step="0.01" placeholder="Monto a asignar" required />
-          <button type="submit" class="btn-primary btn-sm" style="white-space:nowrap">Asignar</button>
-        </form>
       </div>
     </div>`;
   }).join('');
 }
+
+/* ============================================================
+   SOURCE INFO MODAL (i) - VISUAL PROGRESS BARS
+   ============================================================ */
+
+window.openSourceInfoModal = function(sourceId) {
+  const s = state.sources.find((x) => x.id === sourceId);
+  if (!s) return;
+  const t = sourceTotals(s);
+  const total = Number(s.amount) || 0;
+
+  const pctAssigned = total > 0 ? Math.min(100, (t.assigned / total) * 100) : 0;
+  const pctUnassigned = total > 0 ? Math.max(0, (t.unassigned / total) * 100) : 0;
+  const pctSpentOfTotal = total > 0 ? Math.min(100, (t.spent / total) * 100) : 0;
+  const pctSpentOfAssigned = t.assigned > 0 ? Math.min(100, (t.spent / t.assigned) * 100) : 0;
+
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  const cats = Object.entries(s.distribution || {});
+
+  content.innerHTML = `
+    <div class="modal-info-content">
+      <div class="modal-info-header">
+        <div>
+          <h3>${s.name}</h3>
+          <p class="muted" style="font-size:0.75rem;margin-top:0.2rem">
+            Estado: <b>${s.status === 'recibido' ? 'Recibido' : 'Pendiente'}</b> · Fecha esperada: <b>${fmt(s.date)}</b>
+          </p>
+        </div>
+        <button type="button" class="btn-ghost btn-sm" id="modal-info-close" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+      </div>
+
+      <div class="info-bars-container">
+        <!-- Total -->
+        <div class="info-bar-item">
+          <div class="info-bar-header">
+            <span class="name">Total Presupuestado</span>
+            <span class="val">${money(total)}</span>
+          </div>
+          <div class="info-bar-track">
+            <div class="info-bar-fill" style="width:100%; background:var(--accent)"></div>
+          </div>
+        </div>
+
+        <!-- Asignado -->
+        <div class="info-bar-item">
+          <div class="info-bar-header">
+            <span class="name">Asignado a categorías (${Math.round(pctAssigned)}%)</span>
+            <span class="val">${money(t.assigned)}</span>
+          </div>
+          <div class="info-bar-track">
+            <div class="info-bar-fill" style="width:${pctAssigned}%; background:var(--text)"></div>
+          </div>
+        </div>
+
+        <!-- Sin Asignar -->
+        <div class="info-bar-item">
+          <div class="info-bar-header">
+            <span class="name">Sin asignar (${Math.round(pctUnassigned)}%)</span>
+            <span class="val" style="color:${t.unassigned < 0 ? 'var(--danger)' : 'var(--success)'}">${money(t.unassigned)}</span>
+          </div>
+          <div class="info-bar-track">
+            <div class="info-bar-fill" style="width:${pctUnassigned}%; background:${t.unassigned < 0 ? 'var(--danger)' : 'var(--success)'}"></div>
+          </div>
+        </div>
+
+        <!-- Gastado -->
+        <div class="info-bar-item">
+          <div class="info-bar-header">
+            <span class="name">Gastado real (${Math.round(pctSpentOfAssigned)}% de lo asignado)</span>
+            <span class="val" style="color:var(--danger)">${money(t.spent)}</span>
+          </div>
+          <div class="info-bar-track">
+            <div class="info-bar-fill" style="width:${pctSpentOfTotal}%; background:var(--danger)"></div>
+          </div>
+        </div>
+
+        <!-- Saldo Disponible Real -->
+        <div class="info-bar-item">
+          <div class="info-bar-header">
+            <span class="name">Saldo remanente disponible</span>
+            <span class="val" style="color:${t.available < 0 ? 'var(--danger)' : 'var(--success)'}">${money(t.available)}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Categorías de esta fuente -->
+      ${cats.length ? `
+        <div class="info-cat-breakdown">
+          <h4 style="font-size:0.78rem;font-weight:600;color:var(--text-2);margin-bottom:0.25rem">Categorías asignadas en esta fuente</h4>
+          ${cats.map(([cat, amt]) => {
+            const catObj = state.categories.find((c) => c.name === cat);
+            const spent = state.expenses
+              .filter((e) => e.sourceId === s.id && e.category === cat)
+              .reduce((a, b) => a + Number(b.amount), 0);
+            return `<div class="info-cat-row">
+              <div style="display:flex;align-items:center;gap:0.4rem">
+                <span class="cat-dot" style="background:${catObj?.color || '#888'}"></span>
+                <b>${cat}</b>
+              </div>
+              <div style="display:flex;gap:0.75rem;font-size:0.75rem">
+                <span>Asig: <b>${money(amt)}</b></span>
+                <span style="color:var(--danger)">Gast: <b>${money(spent)}</b></span>
+                <span style="color:${amt - spent < 0 ? 'var(--danger)' : 'var(--success)'}">Disp: <b>${money(amt - spent)}</b></span>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      ` : ''}
+
+      <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.5rem">
+        <button type="button" class="btn-primary btn-sm" onclick="openSourceAssignmentsModal('${s.id}')">Editar asignaciones →</button>
+      </div>
+    </div>
+  `;
+
+  overlay.style.display = 'flex';
+  $('modal-info-close')?.addEventListener('click', () => { overlay.style.display = 'none'; });
+  overlay.onclick = (ev) => { if (ev.target === overlay) overlay.style.display = 'none'; };
+};
+
+/* ============================================================
+   SOURCE ASSIGNMENTS MODAL - CLEAN BUDGET ALLOCATION
+   ============================================================ */
+
+window.openSourceAssignmentsModal = function(sourceId) {
+  const s = state.sources.find((x) => x.id === sourceId);
+  if (!s) return;
+
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  function renderModalContent() {
+    const freshSource = state.sources.find((x) => x.id === sourceId);
+    if (!freshSource) { overlay.style.display = 'none'; return; }
+    const t = sourceTotals(freshSource);
+    const sourceAssignments = state.assignments.filter((a) => a.sourceId === sourceId);
+
+    // Available categories not yet assigned, or all categories
+    const catOpts = state.categories.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
+
+    content.innerHTML = `
+      <div class="assignments-modal-body">
+        <div class="modal-info-header">
+          <div>
+            <h3>Asignaciones: ${freshSource.name}</h3>
+            <p class="muted" style="font-size:0.75rem;margin-top:0.15rem">Distribuye el presupuesto disponible en tus categorías</p>
+          </div>
+          <button type="button" class="btn-ghost btn-sm" id="assignments-modal-close" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+        </div>
+
+        <div class="assignments-balance-card">
+          <div class="abc-col">
+            <span class="label">Total fuente</span>
+            <span class="val">${money(freshSource.amount)}</span>
+          </div>
+          <div class="abc-col">
+            <span class="label">Asignado</span>
+            <span class="val">${money(t.assigned)}</span>
+          </div>
+          <div class="abc-col">
+            <span class="label">Por asignar</span>
+            <span class="val" style="color:${t.unassigned < 0 ? 'var(--danger)' : 'var(--success)'}">${money(t.unassigned)}</span>
+          </div>
+        </div>
+
+        <div>
+          <h4 style="font-size:0.78rem;font-weight:600;color:var(--text-2);margin-bottom:0.45rem">
+            Asignaciones actuales (${sourceAssignments.length})
+          </h4>
+          <div class="assignments-table">
+            ${sourceAssignments.length === 0 ? `
+              <div class="empty-state" style="padding:1rem;font-size:0.8rem">
+                <span>Esta fuente aún no tiene categorías asignadas</span>
+              </div>
+            ` : sourceAssignments.map((a) => {
+              const catObj = state.categories.find((c) => c.name === a.category);
+              return `<div class="assignment-row-item">
+                <div class="assignment-cat-name">
+                  <span class="cat-dot" style="background:${catObj?.color || '#888'}"></span>
+                  <span>${a.category}</span>
+                </div>
+                <div class="assignment-input-inline">
+                  <input type="number" min="0.01" step="0.01" value="${a.amount}" id="input-asg-${a.id}" data-asg-id="${a.id}" />
+                  <button type="button" class="btn-secondary btn-sm" onclick="saveAssignmentInline('${a.id}', '${sourceId}')" title="Guardar cambios">Guardar</button>
+                  <button type="button" class="btn-danger btn-sm" onclick="removeAssignmentFromModal('${a.id}', '${sourceId}')" title="Eliminar asignación">✕</button>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="assignment-add-box">
+          <h4>+ Asignar presupuesto a categoría</h4>
+          <form id="modal-asg-add-form" class="assignment-add-form">
+            <select id="modal-asg-category" required>${catOpts}</select>
+            <input id="modal-asg-amount" type="number" min="0.01" step="0.01" placeholder="Monto (₡)" required />
+            <button type="submit" class="btn-primary btn-sm">Asignar</button>
+          </form>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end">
+          <button type="button" class="btn-secondary btn-sm" id="modal-asg-done-btn">Listo</button>
+        </div>
+      </div>
+    `;
+
+    _buildCsel('modal-asg-category', { isCategory: true });
+
+    $('assignments-modal-close')?.addEventListener('click', () => { overlay.style.display = 'none'; });
+    $('modal-asg-done-btn')?.addEventListener('click', () => { overlay.style.display = 'none'; });
+
+    $('modal-asg-add-form')?.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const cat = $('modal-asg-category').value;
+      const amt = Number($('modal-asg-amount').value);
+      if (!cat || !amt || amt <= 0) return;
+
+      const curDist = { ...(freshSource.distribution || {}) };
+      const curTotal = Object.values(curDist).reduce((x, y) => x + Number(y || 0), 0);
+      if (curTotal + amt > Number(freshSource.amount)) {
+        toast(`⚠️ Excede el total de la fuente (${money(freshSource.amount)})`);
+        return;
+      }
+
+      state.assignments.push({
+        id: uid(),
+        sourceId: freshSource.id,
+        category: cat,
+        amount: amt,
+        date: new Date().toISOString().slice(0, 10)
+      });
+      rebuildDistributionsFromAssignments();
+      renderAll();
+      toast(`Asignado ${money(amt)} a ${cat}`);
+      renderModalContent();
+    });
+  }
+
+  renderModalContent();
+  overlay.style.display = 'flex';
+  overlay.onclick = (ev) => { if (ev.target === overlay) overlay.style.display = 'none'; };
+};
+
+window.saveAssignmentInline = function(assignmentId, sourceId) {
+  const input = $(`input-asg-${assignmentId}`);
+  if (!input) return;
+  const newAmt = Number(input.value);
+  if (!Number.isFinite(newAmt) || newAmt <= 0) {
+    toast('⚠️ Monto inválido');
+    return;
+  }
+  const asg = state.assignments.find((a) => a.id === assignmentId);
+  const src = state.sources.find((s) => s.id === sourceId);
+  if (!asg || !src) return;
+
+  const currentTotal = Object.values(src.distribution || {}).reduce((x, y) => x + Number(y || 0), 0);
+  const projected = currentTotal - Number(asg.amount) + newAmt;
+  if (projected > Number(src.amount)) {
+    toast(`⚠️ Excede el total de la fuente (${money(src.amount)})`);
+    return;
+  }
+
+  asg.amount = newAmt;
+  rebuildDistributionsFromAssignments();
+  renderAll();
+  toast('Asignación actualizada');
+  openSourceAssignmentsModal(sourceId);
+};
+
+window.removeAssignmentFromModal = function(assignmentId, sourceId) {
+  if (!confirm('¿Eliminar esta asignación de presupuesto?')) return;
+  state.assignments = state.assignments.filter((a) => a.id !== assignmentId);
+  rebuildDistributionsFromAssignments();
+  renderAll();
+  toast('Asignación eliminada');
+  openSourceAssignmentsModal(sourceId);
+};
 
 /* ============================================================
    SOURCE CRUD
@@ -612,14 +887,14 @@ window.startEditSource = function(id) {
   const s = state.sources.find((x) => x.id === id);
   if (!s) return;
   state.editingSourceId = id;
-  $('source-name').value   = s.name;
+  $('source-name').value = s.name;
   $('source-amount').value = s.amount;
-  $('source-date').value   = s.date;
+  $('source-date').value = s.date;
   $('source-status').value = s.status;
   _refreshCsel('source-status');
-  $('source-submit-btn').textContent  = 'Actualizar fuente';
-  $('source-form-title').textContent  = 'Editar fuente';
-  $('cancel-edit-btn').style.display  = '';
+  $('source-submit-btn').textContent = 'Actualizar fuente';
+  $('source-form-title').textContent = 'Editar fuente';
+  $('cancel-edit-btn').style.display = '';
   $('source-form-card').style.display = '';
   $('source-form-card').classList.add('is-open');
   $('toggle-source-form').textContent = '−';
@@ -629,8 +904,9 @@ window.startEditSource = function(id) {
 
 window.deleteSource = function(id) {
   if (!confirm('¿Eliminar esta fuente y todos sus gastos asociados?')) return;
-  state.sources  = state.sources.filter((s) => s.id !== id);
+  state.sources = state.sources.filter((s) => s.id !== id);
   state.expenses = state.expenses.filter((e) => e.sourceId !== id);
+  state.assignments = state.assignments.filter((a) => a.sourceId !== id);
   if (state.editingSourceId === id) cancelEdit();
   renderAll();
   toast('Fuente eliminada');
@@ -639,10 +915,10 @@ window.deleteSource = function(id) {
 function cancelEdit() {
   state.editingSourceId = null;
   $('source-form').reset();
-  $('source-date').valueAsDate         = new Date();
-  $('source-submit-btn').textContent   = 'Guardar fuente';
-  $('source-form-title').textContent   = 'Nueva fuente';
-  $('cancel-edit-btn').style.display   = 'none';
+  $('source-date').valueAsDate = new Date();
+  $('source-submit-btn').textContent = 'Guardar fuente';
+  $('source-form-title').textContent = 'Nueva fuente';
+  $('cancel-edit-btn').style.display = 'none';
 }
 
 $('cancel-edit-btn').addEventListener('click', cancelEdit);
@@ -650,9 +926,9 @@ $('cancel-edit-btn').addEventListener('click', cancelEdit);
 $('source-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const payload = {
-    name:   $('source-name').value.trim(),
+    name: $('source-name').value.trim(),
     amount: Number($('source-amount').value),
-    date:   $('source-date').value,
+    date: $('source-date').value,
     status: $('source-status').value
   };
   if (state.editingSourceId) {
@@ -673,81 +949,158 @@ $('source-form').addEventListener('submit', (e) => {
 });
 
 /* ============================================================
-   DISTRIBUTION
+   RENDER CATEGORIES & CATEGORY MODAL
    ============================================================ */
 
-window.addDistribution = function(e, sourceId) {
-  e.preventDefault();
-  const category = e.target.category.value;
-  const amount   = Number(e.target.amount.value);
-  const source   = state.sources.find((s) => s.id === sourceId);
-  if (!source || !category || amount < 0) return;
-  const dist  = { ...(source.distribution || {}) };
-  dist[category] = (dist[category] || 0) + amount;
-  const total = Object.values(dist).reduce((a, b) => a + Number(b || 0), 0);
-  if (total > Number(source.amount)) {
-    toast(`⚠️ Excede el total de la fuente (${money(source.amount)})`); return;
-  }
-  state.assignments.push({ id: uid(), sourceId, category, amount, date: new Date().toISOString().slice(0, 10) });
-  rebuildDistributionsFromAssignments();
-  e.target.reset();
-  renderAll();
-  toast(`Asignado ${money(amount)} a ${category}`);
+const PRESET_COLORS = [
+  '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
+  '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6',
+  '#6366f1', '#f97316', '#64748b', '#84cc16'
+];
+
+window.openCategoryModal = function(catName = null) {
+  const isEdit = !!catName;
+  const existing = isEdit ? state.categories.find((c) => c.name === catName) : null;
+
+  let selectedColor = existing ? existing.color : PRESET_COLORS[Math.floor(Math.random() * PRESET_COLORS.length)];
+
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  content.innerHTML = `
+    <div class="modal-info-content" style="max-width:440px">
+      <div class="modal-info-header">
+        <h3>${isEdit ? 'Editar categoría' : 'Nueva categoría'}</h3>
+        <button type="button" class="btn-ghost btn-sm" id="cat-modal-close" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+      </div>
+
+      <form id="cat-modal-form" style="display:flex;flex-direction:column;gap:1rem;margin-top:0.5rem">
+        <div class="field">
+          <label>Nombre de la categoría</label>
+          <input id="cat-modal-name" placeholder="Ej. Alimentación, Vivienda, Servicios..." value="${existing ? existing.name : ''}" required />
+        </div>
+
+        <div class="field">
+          <label>Color representativo</label>
+          <div class="color-picker-grid" id="cat-preset-grid">
+            ${PRESET_COLORS.map((c) => `
+              <div class="color-swatch ${c.toLowerCase() === selectedColor.toLowerCase() ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>
+            `).join('')}
+            <div class="color-input-native-wrap" title="Color personalizado">
+              <input type="color" id="cat-native-color" value="${selectedColor}" />
+            </div>
+          </div>
+        </div>
+
+        <div style="padding:0.6rem 0.85rem;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;align-items:center;gap:0.6rem">
+          <span style="font-size:0.75rem;color:var(--text-3)">Vista previa:</span>
+          <span class="badge" id="cat-preview-badge" style="background:${selectedColor};color:#fff;font-weight:600;padding:0.25rem 0.6rem">
+            ${existing ? existing.name : 'Ejemplo'}
+          </span>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.5rem">
+          <button type="button" class="btn-ghost" id="cat-modal-cancel">Cancelar</button>
+          <button type="submit" class="btn-primary">${isEdit ? 'Guardar cambios' : 'Crear categoría'}</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  // Color Swatch clicks
+  const swatches = content.querySelectorAll('.color-swatch');
+  const nativeColorInput = $('cat-native-color');
+  const previewBadge = $('cat-preview-badge');
+  const nameInput = $('cat-modal-name');
+
+  swatches.forEach((sw) => {
+    sw.addEventListener('click', () => {
+      swatches.forEach((s) => s.classList.remove('selected'));
+      sw.classList.add('selected');
+      selectedColor = sw.getAttribute('data-color');
+      nativeColorInput.value = selectedColor;
+      previewBadge.style.background = selectedColor;
+    });
+  });
+
+  nativeColorInput.addEventListener('input', (ev) => {
+    swatches.forEach((s) => s.classList.remove('selected'));
+    selectedColor = ev.target.value;
+    previewBadge.style.background = selectedColor;
+  });
+
+  nameInput.addEventListener('input', (ev) => {
+    previewBadge.textContent = ev.target.value.trim() || 'Ejemplo';
+  });
+
+  overlay.style.display = 'flex';
+  nameInput.focus();
+
+  $('cat-modal-close')?.addEventListener('click', () => { overlay.style.display = 'none'; });
+  $('cat-modal-cancel')?.addEventListener('click', () => { overlay.style.display = 'none'; });
+  overlay.onclick = (ev) => { if (ev.target === overlay) overlay.style.display = 'none'; };
+
+  $('cat-modal-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const name = nameInput.value.trim();
+    if (!name) return;
+
+    if (!isEdit && state.categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
+      toast('⚠️ Esa categoría ya existe');
+      return;
+    }
+
+    if (isEdit) {
+      const cat = state.categories.find((c) => c.name === catName);
+      if (cat) {
+        cat.name = name;
+        cat.color = selectedColor;
+      }
+      state.expenses.forEach((ex) => { if (ex.category === catName) ex.category = name; });
+      state.assignments.forEach((a) => { if (a.category === catName) a.category = name; });
+      state.sources.forEach((s) => {
+        if (s.distribution && s.distribution[catName] !== undefined) {
+          s.distribution[name] = s.distribution[catName];
+          if (name !== catName) delete s.distribution[catName];
+        }
+      });
+      toast(`Categoría "${name}" actualizada`);
+    } else {
+      state.categories.push({ name, color: selectedColor });
+      toast(`Categoría "${name}" creada`);
+    }
+
+    overlay.style.display = 'none';
+    renderAll();
+  });
 };
 
-window.deleteAssignment = function(id) {
-  if (!confirm('¿Eliminar esta asignación?')) return;
-  state.assignments = state.assignments.filter((a) => a.id !== id);
-  rebuildDistributionsFromAssignments();
-  renderAll();
-  toast('Asignación eliminada');
-};
-
-window.startEditAssignment = function(id) {
-  const a = state.assignments.find((x) => x.id === id);
-  if (!a) return;
-  const next = prompt('Nuevo monto para la asignación:', String(a.amount));
-  if (next === null) return;
-  const amount = Number(next);
-  if (!Number.isFinite(amount) || amount <= 0) { toast('⚠️ Monto inválido'); return; }
-  const source = state.sources.find((s) => s.id === a.sourceId);
-  if (!source) return;
-  const currentTotal = Object.values(source.distribution || {}).reduce((x,y)=>x+Number(y||0),0);
-  const projected = currentTotal - Number(a.amount) + amount;
-  if (projected > Number(source.amount)) { toast(`⚠️ Excede el total de la fuente (${money(source.amount)})`); return; }
-  a.amount = amount;
-  rebuildDistributionsFromAssignments();
-  renderAll();
-  toast('Asignación actualizada');
-};
-
-/* ============================================================
-   RENDER CATEGORIES
-   ============================================================ */
+$('add-category-btn')?.addEventListener('click', () => openCategoryModal());
 
 function renderCategories() {
-  // chips
-  $('category-list').innerHTML = state.categories.map((c) =>
-    `<span class="chip" style="background:${c.color}">${c.name}
-      <button type="button" class="chip-action-btn" title="Editar" onclick="editCategory('${c.name.replace(/'/g, "\\'")}')">✎</button>
-      <button type="button" class="chip-action-btn danger" title="Eliminar" onclick="deleteCategory('${c.name.replace(/'/g, "\\'")}')">✕</button>
-    </span>`).join('');
+  const map = categoryMap();
+  const el = $('categories');
 
-  // selects
+  // Update filter-category select
   const opts = state.categories.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
-  $('expense-category').innerHTML  = opts;
-  $('filter-category').innerHTML   = `<option value="">Todas las categorías</option>${opts}`;
-  _refreshCsel('expense-category');
+  $('filter-category').innerHTML = `<option value="">Todas las categorías</option>${opts}`;
   _refreshCsel('filter-category');
 
-  const map = categoryMap();
-  const el  = $('categories');
+  // Sync expense selects
+  syncExpenseCategoryOptions();
 
   const entries = Object.entries(map);
-  if (!entries.length) { el.innerHTML = ''; return; }
+  if (!entries.length) {
+    el.innerHTML = `<div class="empty-state" style="padding:2rem">
+      <p>Sin categorías definidas</p><span>Crea tu primera categoría con el botón de arriba</span>
+    </div>`;
+    return;
+  }
 
   el.innerHTML = entries.map(([cat, d]) => {
-    const pct    = d.assigned > 0 ? Math.min(100, (d.spent / d.assigned) * 100) : 0;
+    const available = d.assigned - d.spent;
+    const pct = d.assigned > 0 ? Math.min(100, (d.spent / d.assigned) * 100) : 0;
     const detail = Object.values(d.bySource).map((x) => `
       <div class="breakdown-row">
         <span class="src-name">${x.sourceName}</span>
@@ -756,8 +1109,8 @@ function renderCategories() {
           <span>Gast: <b>${money(x.spent)}</b></span>
           <span>Disp: <b>${money(x.assigned - x.spent)}</b></span>
           ${(x.assigned - x.spent) > 0
-    ? `<button type="button" class="btn-secondary btn-sm" onclick="moveRemainingBudget('${x.sourceId}','${cat.replace(/'/g, "\\'")}')">Reasignar</button>`
-    : ''}
+            ? `<button type="button" class="btn-secondary btn-sm" onclick="moveRemainingBudget('${x.sourceId}','${cat.replace(/'/g, "\\'")}')">Reasignar</button>`
+            : ''}
         </div>
       </div>`).join('');
 
@@ -767,348 +1120,277 @@ function renderCategories() {
           <span class="cat-dot" style="background:${d.color}"></span>
           ${cat}
         </div>
-        <div class="category-amounts">
-          <span class="spent">-${money(d.spent)}</span>
-          <span class="sep">/</span>
-          ${money(d.assigned)}
+        <div class="category-card-actions">
+          <button type="button" class="btn-secondary btn-sm" onclick="openCategoryModal('${cat.replace(/'/g, "\\'")}')" title="Editar nombre y color">✎ Editar</button>
+          <button type="button" class="btn-danger btn-sm" onclick="deleteCategory('${cat.replace(/'/g, "\\'")}')" title="Eliminar categoría">🗑</button>
         </div>
       </div>
+
       <div class="category-body">
+        <div class="category-metrics-grid">
+          <div class="cat-metric-box">
+            <span class="label">Asignado</span>
+            <span class="val">${money(d.assigned)}</span>
+          </div>
+          <div class="cat-metric-box">
+            <span class="label">Gastado</span>
+            <span class="val spent">${money(d.spent)}</span>
+          </div>
+          <div class="cat-metric-box">
+            <span class="label">Disponible</span>
+            <span class="val ${available < 0 ? 'over' : 'remaining'}">${money(available)}</span>
+          </div>
+        </div>
+
         <div class="cat-progress-wrap">
           <div class="progress-bar" style="flex:1">
-            <div class="progress-fill" style="width:${pct}%;background:${d.color}"></div>
+            <div class="progress-fill" style="width:${pct}%; background:${d.color}"></div>
           </div>
           <span class="cat-pct">${Math.round(pct)}%</span>
         </div>
+
         ${detail ? `<details><summary>Desglose por fuente</summary><div class="source-breakdown">${detail}</div></details>` : ''}
       </div>
     </div>`;
   }).join('');
 }
 
-$('category-form').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const name  = $('category-name').value.trim();
-  const color = $('category-color').value;
-  if (!name) return;
-  if (!state.editingCategoryName && state.categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
-    toast('⚠️ Esa categoría ya existe'); return;
-  }
-  if (state.editingCategoryName) {
-    const cat = state.categories.find((c)=>c.name===state.editingCategoryName);
-    if (cat) cat.color = color, cat.name = name;
-    state.expenses.forEach((ex)=>{ if (ex.category === state.editingCategoryName) ex.category = name; });
-    state.assignments.forEach((a)=>{ if (a.category === state.editingCategoryName) a.category = name; });
-    state.editingCategoryName = null;
-  } else {
-    state.categories.push({ name, color });
-  }
-  e.target.reset();
-  $('category-color').value = '#3b82f6';
-  renderAll();
-  $('category-form-card').classList.remove('is-open');
-  $('category-form-card').style.display = 'none';
-  $('toggle-category-form').textContent = '+';
-  toast(`Categoría "${name}" creada`);
-});
-
-window.editCategory = function(name) {
-  const cat = state.categories.find((c)=>c.name===name);
-  if (!cat) return;
-  $('category-name').value = cat.name;
-  $('category-color').value = cat.color;
-  state.editingCategoryName = name;
-  $('category-form-card').style.display = '';
-  $('category-form-card').classList.add('is-open');
-};
-
 window.deleteCategory = function(name) {
-  if (!confirm(`¿Eliminar categoría "${name}"?`)) return;
-  state.categories = state.categories.filter((c)=>c.name!==name);
-  state.assignments = state.assignments.filter((a)=>a.category!==name);
-  state.expenses = state.expenses.filter((e)=>e.category!==name);
+  if (!confirm(`¿Eliminar categoría "${name}" y todos sus gastos asociados?`)) return;
+  state.categories = state.categories.filter((c) => c.name !== name);
+  state.assignments = state.assignments.filter((a) => a.category !== name);
+  state.expenses = state.expenses.filter((e) => e.category !== name);
+  state.sources.forEach((s) => {
+    if (s.distribution && s.distribution[name] !== undefined) {
+      delete s.distribution[name];
+    }
+  });
   rebuildDistributionsFromAssignments();
   renderAll();
-  toast('Categoría eliminada');
+  toast(`Categoría "${name}" eliminada`);
 };
 
 /* ============================================================
-   RENDER EXPENSES
+   SMART EXPENSES UX & SIMULATION
    ============================================================ */
 
-function renderExpensesList() {
-  const filterSrc = $('filter-source').value;
-  const filterCat = $('filter-category').value;
+function syncExpenseCategoryOptions() {
+  const sourceId = $('expense-source')?.value;
+  const catSelect = $('expense-category');
+  const alertNoCat = $('expense-no-cat-alert');
+  const simBox = $('expense-sim-box');
+  if (!catSelect) return;
 
-  let list = [...state.expenses].sort(compareByDateDesc);
-  if (filterSrc) list = list.filter((e) => e.sourceId === filterSrc);
-  if (filterCat) list = list.filter((e) => e.category === filterCat);
-
-  const el = $('expenses-list');
-
-  if (!list.length) {
-    el.innerHTML = `<div class="empty-state">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
-      <p>Sin gastos</p><span>Ajusta los filtros o registra un nuevo gasto</span></div>`;
+  if (!sourceId) {
+    catSelect.innerHTML = '<option value="">Primero elige una fuente</option>';
+    _refreshCsel('expense-category');
+    if (alertNoCat) alertNoCat.style.display = 'none';
+    if (simBox) simBox.style.display = 'none';
     return;
   }
 
-  el.innerHTML = `
-    <div class="expense-table-header">
-      <span>Descripción</span><span>Categoría</span><span>Fuente</span><span>Monto</span><span>Fecha</span><span>Acciones</span>
-    </div>` +
-    list.map((e) => {
-      const src = state.sources.find((s) => s.id === e.sourceId);
-      const cat = state.categories.find((c) => c.name === e.category);
-      return `<div class="expense-row">
-        <div class="exp-col-desc">
-          <div class="exp-desc">${e.desc}</div>
-          <div class="exp-meta-inline">
-            <span class="exp-tag"><span class="exp-tag-dot" style="background:${cat?.color || '#888'}"></span>${e.category}</span>
-            <span class="exp-tag">${src?.name || '—'}</span>
-            <span class="exp-date">${fmt(e.date)}</span>
-          </div>
-        </div>
-        <div class="exp-col-cat"><span class="exp-tag"><span class="exp-tag-dot" style="background:${cat?.color || '#888'}"></span>${e.category}</span></div>
-        <div class="exp-col-src"><span class="exp-tag">${src?.name || '—'}</span></div>
-        <div class="exp-col-amt"><span class="exp-amount">-${money(e.amount)}</span></div>
-        <div class="exp-col-date"><span class="exp-date">${fmt(e.date)}</span></div>
-        <div class="exp-col-actions expense-actions">
-          <button type="button" class="btn-secondary btn-sm" onclick="editExpense('${e.id}')">Editar</button>
-          <button type="button" class="btn-danger btn-sm" onclick="deleteExpense('${e.id}')">Eliminar</button>
-        </div>
-      </div>`;
-    }).join('');
+  const source = state.sources.find((s) => s.id === sourceId);
+  if (!source) return;
+
+  const assignedCats = Object.entries(source.distribution || {}).filter(([_, amt]) => amt > 0);
+
+  if (assignedCats.length === 0) {
+    catSelect.innerHTML = '<option value="">(Sin categorías asignadas)</option>';
+    _refreshCsel('expense-category');
+    if (alertNoCat) {
+      alertNoCat.style.display = 'flex';
+      const gotoBtn = $('expense-goto-source-btn');
+      if (gotoBtn) {
+        gotoBtn.onclick = () => {
+          openSourceAssignmentsModal(sourceId);
+        };
+      }
+    }
+    if (simBox) simBox.style.display = 'none';
+    return;
+  }
+
+  if (alertNoCat) alertNoCat.style.display = 'none';
+
+  // Populate options with available balance for each category in this source
+  catSelect.innerHTML = assignedCats.map(([catName, assignedAmt]) => {
+    const spent = state.expenses
+      .filter((e) => e.sourceId === sourceId && e.category === catName)
+      .reduce((a, b) => a + Number(b.amount), 0);
+    const available = assignedAmt - spent;
+    return `<option value="${catName}">${catName} (Disp: ${money(available)})</option>`;
+  }).join('');
+
+  _refreshCsel('expense-category');
+  updateExpenseSimulation();
 }
 
-function renderFilters() {
-  $('expense-source').innerHTML   = state.sources.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
-  $('filter-source').innerHTML    = `<option value="">Todas las fuentes</option>` +
-    state.sources.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
-  _refreshCsel('expense-source');
-  _refreshCsel('filter-source');
+function updateExpenseSimulation() {
+  const sourceId = $('expense-source')?.value;
+  const category = $('expense-category')?.value;
+  const amountInput = $('expense-amount');
+  const amount = Number(amountInput?.value || 0);
+  const simBox = $('expense-sim-box');
+  if (!simBox) return;
+
+  if (!sourceId || !category) {
+    simBox.style.display = 'none';
+    return;
+  }
+
+  const source = state.sources.find((s) => s.id === sourceId);
+  if (!source || !source.distribution || !source.distribution[category]) {
+    simBox.style.display = 'none';
+    return;
+  }
+
+  const assigned = Number(source.distribution[category]);
+  const spent = state.expenses
+    .filter((e) => e.sourceId === sourceId && e.category === category)
+    .reduce((a, b) => a + Number(b.amount), 0);
+  const currentAvailable = assigned - spent;
+  const newAvailable = currentAvailable - amount;
+  const isOver = newAvailable < 0;
+
+  simBox.style.display = 'flex';
+  simBox.innerHTML = `
+    <div class="sim-row">
+      <span style="color:var(--text-2)">Presupuesto categoría: <b>${category}</b></span>
+      <span>Asignado: <b>${money(assigned)}</b> · Gastado: <b>${money(spent)}</b></span>
+    </div>
+    <div class="sim-row">
+      <span style="font-weight:500;color:var(--text)">Balance resultante:</span>
+      <div class="sim-calc-flow">
+        <span>${money(currentAvailable)}</span>
+        <span class="arrow">− ${money(amount)} →</span>
+        <span class="new-bal ${isOver ? 'over' : ''}">${money(newAvailable)}</span>
+      </div>
+    </div>
+    ${isOver ? `
+      <div style="font-size:0.75rem;color:var(--danger);font-weight:500;margin-top:0.2rem">
+        ⚠️ Atención: Este gasto excede el presupuesto disponible de la categoría en esta fuente por ${money(Math.abs(newAvailable))}.
+      </div>
+    ` : ''}
+  `;
 }
 
-$('filter-source').addEventListener('change', renderExpensesList);
-$('filter-category').addEventListener('change', renderExpensesList);
+$('expense-source')?.addEventListener('change', () => {
+  syncExpenseCategoryOptions();
+});
 
-$('expense-form').addEventListener('submit', (e) => {
+$('expense-category')?.addEventListener('change', () => {
+  updateExpenseSimulation();
+});
+
+$('expense-amount')?.addEventListener('input', () => {
+  updateExpenseSimulation();
+});
+
+/* ============================================================
+   EXPENSE SUBMIT & CRUD
+   ============================================================ */
+
+$('expense-form')?.addEventListener('submit', (e) => {
   e.preventDefault();
   const sourceId = $('expense-source').value;
   const category = $('expense-category').value;
   const amount   = Number($('expense-amount').value);
+  const date     = $('expense-date').value || new Date().toISOString().slice(0, 10);
   const desc     = $('expense-desc').value.trim();
-  if (!sourceId) { toast('⚠️ Selecciona una fuente'); return; }
+
+  if (!sourceId) { toast('⚠️ Selecciona una fuente de ingreso'); return; }
+  if (!category) { toast('⚠️ Selecciona una categoría'); return; }
+  if (!Number.isFinite(amount) || amount <= 0) { toast('⚠️ Ingresa un monto válido'); return; }
+
   const source   = state.sources.find((s) => s.id === sourceId);
   const assigned = Number(source?.distribution?.[category] || 0);
   const spent    = state.expenses
-    .filter((x) => x.sourceId === sourceId && x.category === category)
+    .filter((x) => x.sourceId === sourceId && x.category === category && (!state.editingExpenseId || x.id !== state.editingExpenseId))
     .reduce((a, b) => a + Number(b.amount), 0);
+
   if (spent + amount > assigned) {
-    toast(`⚠️ Excede el límite asignado (${money(assigned - spent)} disponible)`); return;
+    if (!confirm(`⚠️ Este gasto excede el presupuesto disponible (${money(assigned - spent)}). ¿Deseas registrarlo de todos modos?`)) {
+      return;
+    }
   }
+
   if (state.editingExpenseId) {
-    const ex = state.expenses.find((x)=>x.id===state.editingExpenseId);
-    if (ex) Object.assign(ex, { sourceId, category, amount, desc });
+    const ex = state.expenses.find((x) => x.id === state.editingExpenseId);
+    if (ex) Object.assign(ex, { sourceId, category, amount, desc, date });
     state.editingExpenseId = null;
+    toast(`Gasto de ${money(amount)} actualizado`);
   } else {
-    state.expenses.push({ id: uid(), sourceId, category, amount, desc, date: new Date().toISOString().slice(0, 10) });
+    state.expenses.push({ id: uid(), sourceId, category, amount, desc, date });
+    toast(`Gasto de ${money(amount)} registrado`);
   }
+
   e.target.reset();
-  const ebi = $('expense-budget-info'); if (ebi) ebi.style.display = 'none';
+  $('expense-date').valueAsDate = new Date();
+  $('expense-submit-btn').textContent = 'Guardar gasto';
+  $('expense-form-title').textContent = 'Registrar nuevo gasto';
+  const simBox = $('expense-sim-box');
+  if (simBox) simBox.style.display = 'none';
+
   renderAll();
   $('expense-form-card').classList.remove('is-open');
   $('expense-form-card').style.display = 'none';
   $('toggle-expense-form').textContent = '+';
-  toast(`Gasto de ${money(amount)} guardado`);
 });
 
 window.editExpense = function(id) {
-  const ex = state.expenses.find((x)=>x.id===id);
+  const ex = state.expenses.find((x) => x.id === id);
   if (!ex) return;
   state.editingExpenseId = id;
   $('expense-source').value = ex.sourceId;
+  _refreshCsel('expense-source');
+  syncExpenseCategoryOptions();
+
   $('expense-category').value = ex.category;
+  _refreshCsel('expense-category');
+
   $('expense-amount').value = ex.amount;
+  $('expense-date').value = ex.date;
   $('expense-desc').value = ex.desc;
-  _refreshCsel('expense-source'); _refreshCsel('expense-category');
+  $('expense-submit-btn').textContent = 'Actualizar gasto';
+  $('expense-form-title').textContent = 'Editar gasto';
+
+  updateExpenseSimulation();
+
   $('expense-form-card').style.display = '';
   $('expense-form-card').classList.add('is-open');
+  $('toggle-expense-form').textContent = '−';
   switchTab('expenses');
+  $('expense-amount').focus();
 };
 
 window.deleteExpense = function(id) {
   if (!confirm('¿Eliminar este gasto?')) return;
-  state.expenses = state.expenses.filter((x)=>x.id!==id);
+  state.expenses = state.expenses.filter((x) => x.id !== id);
+  if (state.editingExpenseId === id) {
+    state.editingExpenseId = null;
+    $('expense-form').reset();
+    $('expense-date').valueAsDate = new Date();
+    $('expense-submit-btn').textContent = 'Guardar gasto';
+    $('expense-form-title').textContent = 'Registrar nuevo gasto';
+  }
   renderAll();
   toast('Gasto eliminado');
 };
 
-/* ============================================================
-   CUSTOM SELECT
-   ============================================================ */
+$('expense-cancel-btn')?.addEventListener('click', () => {
+  state.editingExpenseId = null;
+  $('expense-form').reset();
+  $('expense-date').valueAsDate = new Date();
+  $('expense-submit-btn').textContent = 'Guardar gasto';
+  $('expense-form-title').textContent = 'Registrar nuevo gasto';
+  const simBox = $('expense-sim-box');
+  if (simBox) simBox.style.display = 'none';
+  $('expense-form-card').classList.remove('is-open');
+  $('expense-form-card').style.display = 'none';
+  $('toggle-expense-form').textContent = '+';
+});
 
-const _cselMap = {};
-
-function _cselOptHTML(value, text, opts) {
-  if (opts.isStatus) {
-    if (value === 'recibido') return `<span class="badge badge-received">✓ Recibido</span>`;
-    if (value === 'pendiente') return `<span class="badge badge-pending">⏳ Pendiente</span>`;
-    return `<span class="csel-text">${text}</span>`;
-  }
-  if (opts.isCategory) {
-    const color = state.categories.find((c) => c.name === value)?.color;
-    if (color) return `<span class="csel-dot" style="background:${color}"></span><span class="csel-text">${text}</span>`;
-  }
-  return `<span class="csel-text">${text}</span>`;
-}
-
-function _buildCsel(id, opts = {}) {
-  const native = $(id);
-  if (!native) return;
-
-  // Wrap only once — if wrapper already exists, just refresh
-  if (_cselMap[id]) { _refreshCsel(id); return; }
-
-  const wrap = document.createElement('div');
-  wrap.className = 'csel';
-  native.parentNode.insertBefore(wrap, native);
-  wrap.appendChild(native);
-  native.classList.add('csel-native');
-
-  const trigger = document.createElement('button');
-  trigger.type = 'button';
-  trigger.className = 'csel-trigger';
-  wrap.appendChild(trigger);
-
-  const list = document.createElement('div');
-  list.className = 'csel-list';
-  wrap.appendChild(list);
-
-  _cselMap[id] = { native, trigger, list, opts };
-
-  trigger.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const isOpen = list.classList.contains('open');
-    _closeAllCsels();
-    if (!isOpen) { list.classList.add('open'); trigger.classList.add('open'); }
-  });
-
-  _refreshCsel(id);
-}
-
-function _refreshCsel(id) {
-  const cs = _cselMap[id];
-  if (!cs) return;
-  const { native, trigger, list, opts } = cs;
-
-  // Rebuild option list
-  list.innerHTML = '';
-  Array.from(native.options).forEach((opt) => {
-    const item = document.createElement('div');
-    item.className = 'csel-item' + (opt.value === native.value ? ' selected' : '');
-    item.innerHTML = _cselOptHTML(opt.value, opt.text, opts);
-    item.addEventListener('click', () => {
-      native.value = opt.value;
-      native.dispatchEvent(new Event('change', { bubbles: true }));
-      _closeAllCsels();
-      _refreshCsel(id);
-    });
-    list.appendChild(item);
-  });
-
-  // Update trigger face
-  const sel = native.options[native.selectedIndex];
-  const chevron = `<svg class="csel-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`;
-  if (sel) {
-    trigger.innerHTML = _cselOptHTML(sel.value, sel.text, opts) + chevron;
-  } else {
-    trigger.innerHTML = `<span class="csel-placeholder">Seleccionar...</span>${chevron}`;
-  }
-}
-
-function _closeAllCsels() {
-  Object.values(_cselMap).forEach(({ list, trigger }) => {
-    list.classList.remove('open');
-    trigger.classList.remove('open');
-  });
-}
-
-function refreshAllCsels() {
-  Object.keys(_cselMap).forEach(_refreshCsel);
-}
-
-function initCustomSelects() {
-  _buildCsel('source-status',    { isStatus: true });
-  _buildCsel('expense-source',   {});
-  _buildCsel('expense-category', { isCategory: true });
-  _buildCsel('filter-source',    {});
-  _buildCsel('filter-category',  { isCategory: true });
-}
-
-document.addEventListener('click', _closeAllCsels);
-
-/* ============================================================
-   EXPENSE BUDGET INFO
-   ============================================================ */
-
-function updateExpenseBudgetInfo() {
-  const sourceId = $('expense-source').value;
-  const category = $('expense-category').value;
-  const el       = $('expense-budget-info');
-  if (!el) return;
-
-  if (!sourceId) { el.style.display = 'none'; return; }
-
-  const source = state.sources.find((s) => s.id === sourceId);
-  if (!source) { el.style.display = 'none'; return; }
-
-  const t = sourceTotals(source);
-  const statusBadge = source.status === 'recibido'
-    ? `<span class="badge badge-received" style="font-size:.7rem">✓ Recibido</span>`
-    : `<span class="badge badge-pending" style="font-size:.7rem">⏳ Pendiente</span>`;
-
-  let html = `<div class="ebi-row">
-    <div class="ebi-source-name">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-      <b>${source.name}</b> ${statusBadge}
-    </div>
-    <div class="ebi-stats">
-      <span>Total <b>${money(source.amount)}</b></span>
-      <span>Asignado <b>${money(t.assigned)}</b></span>
-      <span style="color:${t.available < 0 ? 'var(--danger)' : 'var(--success)'}">Disponible <b>${money(t.available)}</b></span>
-    </div>
-  </div>`;
-
-  if (category) {
-    const assigned  = Number(source.distribution?.[category] || 0);
-    const spent     = state.expenses
-      .filter((e) => e.sourceId === sourceId && e.category === category)
-      .reduce((a, b) => a + Number(b.amount), 0);
-    const available = assigned - spent;
-    const catColor  = state.categories.find((c) => c.name === category)?.color || '#888';
-
-    html += `<div class="ebi-divider"></div>
-    <div class="ebi-row">
-      <div class="ebi-source-name">
-        <span class="csel-dot" style="background:${catColor}"></span>
-        <b>${category}</b>
-      </div>
-      <div class="ebi-stats">
-        <span>Asignado <b>${money(assigned)}</b></span>
-        <span style="color:var(--danger)">Gastado <b>${money(spent)}</b></span>
-        <span style="color:${available < 0 ? 'var(--danger)' : 'var(--success)'}">Disponible <b>${money(available)}</b></span>
-      </div>
-    </div>`;
-  }
-
-  el.innerHTML = html;
-  el.style.display = '';
-}
-
-$('expense-source').addEventListener('change', updateExpenseBudgetInfo);
-$('expense-category').addEventListener('change', updateExpenseBudgetInfo);
-
+/* Toggle collapsible cards */
 function toggleCollapsibleCard(cardId, btnId) {
   const card = $(cardId);
   const btn = $(btnId);
@@ -1119,7 +1401,10 @@ function toggleCollapsibleCard(cardId, btnId) {
     card.style.display = '';
     requestAnimationFrame(() => card.classList.add('is-open'));
     btn.textContent = '−';
-    if (cardId === 'expense-form-card') updateExpenseBudgetInfo();
+    if (cardId === 'expense-form-card') {
+      if (!$('expense-date').value) $('expense-date').valueAsDate = new Date();
+      syncExpenseCategoryOptions();
+    }
     return;
   }
 
@@ -1128,9 +1413,8 @@ function toggleCollapsibleCard(cardId, btnId) {
   btn.textContent = '+';
 }
 
-$('toggle-source-form').addEventListener('click', () => toggleCollapsibleCard('source-form-card', 'toggle-source-form'));
-$('toggle-category-form').addEventListener('click', () => toggleCollapsibleCard('category-form-card', 'toggle-category-form'));
-$('toggle-expense-form').addEventListener('click', () => toggleCollapsibleCard('expense-form-card', 'toggle-expense-form'));
+$('toggle-source-form')?.addEventListener('click', () => toggleCollapsibleCard('source-form-card', 'toggle-source-form'));
+$('toggle-expense-form')?.addEventListener('click', () => toggleCollapsibleCard('expense-form-card', 'toggle-expense-form'));
 
 /* ============================================================
    RENDER ALL / PER TAB
