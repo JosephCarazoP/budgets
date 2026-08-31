@@ -207,6 +207,160 @@ function toast(msg, duration = 2800) {
 }
 
 /* ============================================================
+   CUSTOM SELECT ENGINE (_buildCsel, _refreshCsel, _closeAllCsels)
+   ============================================================ */
+
+const _cselMap = {};
+
+function _cselOptHTML(value, text, opts = {}) {
+  if (opts.isStatus) {
+    if (value === 'recibido') {
+      return `<span class="badge badge-received">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        Recibido
+      </span>`;
+    }
+    if (value === 'pendiente') {
+      return `<span class="badge badge-pending">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Pendiente
+      </span>`;
+    }
+    return `<span class="csel-text">${text}</span>`;
+  }
+  if (opts.isCategory) {
+    const color = state.categories.find((c) => c.name === value)?.color;
+    if (color) {
+      return `<span class="csel-dot" style="background:${color}"></span><span class="csel-text">${text}</span>`;
+    }
+  }
+  return `<span class="csel-text">${text}</span>`;
+}
+
+function _buildCsel(id, opts = {}) {
+  const native = $(id);
+  if (!native) return;
+  if (!native.parentNode) return;
+
+  // Si ya existía un registro pero el elemento nativo fue recreado por innerHTML
+  if (_cselMap[id] && _cselMap[id].native === native && native.parentNode.classList?.contains('csel')) {
+    _cselMap[id].opts = opts;
+    _refreshCsel(id);
+    return;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'csel';
+  native.parentNode.insertBefore(wrap, native);
+  wrap.appendChild(native);
+  native.classList.add('csel-native');
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'csel-trigger';
+  wrap.appendChild(trigger);
+
+  const list = document.createElement('div');
+  list.className = 'csel-list';
+  wrap.appendChild(list);
+
+  _cselMap[id] = { native, trigger, list, opts, wrap };
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = list.classList.contains('open');
+    _closeAllCsels();
+    if (!isOpen) {
+      list.classList.add('open');
+      trigger.classList.add('open');
+    }
+  });
+
+  _refreshCsel(id);
+}
+
+function _refreshCsel(id) {
+  const cs = _cselMap[id];
+  if (!cs) return;
+  const { native, trigger, list, opts } = cs;
+
+  list.innerHTML = '';
+  Array.from(native.options).forEach((opt) => {
+    const item = document.createElement('div');
+    item.className = 'csel-item' + (opt.value === native.value ? ' selected' : '');
+    item.innerHTML = _cselOptHTML(opt.value, opt.text, opts);
+    item.addEventListener('click', () => {
+      native.value = opt.value;
+      native.dispatchEvent(new Event('change', { bubbles: true }));
+      _closeAllCsels();
+      _refreshCsel(id);
+    });
+    list.appendChild(item);
+  });
+
+  const sel = native.options[native.selectedIndex];
+  const chevron = `<svg class="csel-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>`;
+  if (sel) {
+    trigger.innerHTML = _cselOptHTML(sel.value, sel.text, opts) + chevron;
+  } else {
+    trigger.innerHTML = `<span class="csel-placeholder">Seleccionar...</span>${chevron}`;
+  }
+}
+
+function _closeAllCsels() {
+  Object.values(_cselMap).forEach(({ list, trigger }) => {
+    list?.classList.remove('open');
+    trigger?.classList.remove('open');
+  });
+}
+
+function initCustomSelects() {
+  _buildCsel('filter-source', {});
+  _buildCsel('filter-category', { isCategory: true });
+
+  $('filter-source')?.addEventListener('change', () => {
+    _refreshCsel('filter-source');
+    renderExpensesList();
+  });
+  $('filter-category')?.addEventListener('change', () => {
+    _refreshCsel('filter-category');
+    renderExpensesList();
+  });
+}
+
+document.addEventListener('click', _closeAllCsels);
+
+// Tecla Escape para cerrar modales y selects
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    _closeAllCsels();
+    const overlay = $('modal-overlay');
+    if (overlay && overlay.style.display !== 'none') {
+      overlay.style.display = 'none';
+    }
+  }
+});
+
+function renderFilters() {
+  const fsEl = $('filter-source');
+  const fcEl = $('filter-category');
+  if (fsEl) {
+    const curSrc = fsEl.value;
+    fsEl.innerHTML = `<option value="">Todas las fuentes</option>` +
+      state.sources.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+    if (curSrc) fsEl.value = curSrc;
+    _refreshCsel('filter-source');
+  }
+  if (fcEl) {
+    const curCat = fcEl.value;
+    const opts = state.categories.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
+    fcEl.innerHTML = `<option value="">Todas las categorías</option>${opts}`;
+    if (curCat) fcEl.value = curCat;
+    _refreshCsel('filter-category');
+  }
+}
+
+/* ============================================================
    DOMAIN LOGIC
    ============================================================ */
 
@@ -629,7 +783,7 @@ window.openSourceModal = function(sourceId = null) {
     <div class="modal-info-content" style="max-width:440px">
       <div class="modal-info-header">
         <h3>${isEdit ? 'Editar fuente de ingreso' : 'Nueva fuente de ingreso'}</h3>
-        <button type="button" class="btn-ghost btn-sm" id="source-modal-close" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+        <button type="button" class="btn-ghost btn-sm" id="source-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
       </div>
 
       <form id="source-modal-form" style="display:flex;flex-direction:column;gap:0.95rem;margin-top:0.5rem">
@@ -674,7 +828,7 @@ window.openSourceModal = function(sourceId = null) {
         </div>
 
         <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.5rem">
-          <button type="button" class="btn-ghost" id="source-modal-cancel">Cancelar</button>
+          <button type="button" class="btn-ghost" id="source-modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
           <button type="submit" class="btn-primary">${isEdit ? 'Actualizar fuente' : 'Guardar fuente'}</button>
         </div>
       </form>
@@ -765,7 +919,7 @@ window.openSourceInfoModal = function(sourceId) {
             Estado: <b>${s.status === 'recibido' ? 'Recibido' : 'Pendiente'}</b> · Fecha esperada: <b>${fmt(s.date)}</b>
           </p>
         </div>
-        <button type="button" class="btn-ghost btn-sm" id="modal-info-close" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+        <button type="button" class="btn-ghost btn-sm" id="modal-info-close" onclick="document.getElementById('modal-overlay').style.display='none'" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
       </div>
 
       <div class="info-bars-container">
@@ -884,7 +1038,7 @@ window.openSourceAssignmentsModal = function(sourceId) {
             <h3>Asignaciones: ${freshSource.name}</h3>
             <p class="muted" style="font-size:0.75rem;margin-top:0.15rem">Distribuye el presupuesto disponible en tus categorías</p>
           </div>
-          <button type="button" class="btn-ghost btn-sm" id="assignments-modal-close" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+          <button type="button" class="btn-ghost btn-sm" id="assignments-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
         </div>
 
         <div class="assignments-balance-card">
@@ -938,7 +1092,7 @@ window.openSourceAssignmentsModal = function(sourceId) {
         </div>
 
         <div style="display:flex;justify-content:flex-end">
-          <button type="button" class="btn-secondary btn-sm" id="modal-asg-done-btn">Listo</button>
+          <button type="button" class="btn-secondary btn-sm" id="modal-asg-done-btn" onclick="document.getElementById('modal-overlay').style.display='none'">Listo</button>
         </div>
       </div>
     `;
@@ -1047,7 +1201,7 @@ window.openCategoryModal = function(catName = null) {
     <div class="modal-info-content" style="max-width:440px">
       <div class="modal-info-header">
         <h3>${isEdit ? 'Editar categoría' : 'Nueva categoría'}</h3>
-        <button type="button" class="btn-ghost btn-sm" id="cat-modal-close" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+        <button type="button" class="btn-ghost btn-sm" id="cat-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
       </div>
 
       <form id="cat-modal-form" style="display:flex;flex-direction:column;gap:1rem;margin-top:0.5rem">
@@ -1085,7 +1239,7 @@ window.openCategoryModal = function(catName = null) {
         </div>
 
         <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.5rem">
-          <button type="button" class="btn-ghost" id="cat-modal-cancel">Cancelar</button>
+          <button type="button" class="btn-ghost" id="cat-modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
           <button type="submit" class="btn-primary">${isEdit ? 'Guardar cambios' : 'Crear categoría'}</button>
         </div>
       </form>
@@ -1283,7 +1437,7 @@ window.openExpenseModal = function(expenseId = null) {
     <div class="modal-info-content" style="max-width:460px">
       <div class="modal-info-header">
         <h3>${isEdit ? 'Editar gasto' : 'Registrar nuevo gasto'}</h3>
-        <button type="button" class="btn-ghost btn-sm" id="expense-modal-close" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+        <button type="button" class="btn-ghost btn-sm" id="expense-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
       </div>
 
       <form id="expense-modal-form" class="expense-smart-form" style="padding:0.5rem 0;display:flex;flex-direction:column;gap:0.9rem">
@@ -1350,7 +1504,7 @@ window.openExpenseModal = function(expenseId = null) {
         <div id="modal-exp-sim-box" class="expense-sim-box" style="display:none"></div>
 
         <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.4rem">
-          <button type="button" class="btn-ghost" id="expense-modal-cancel">Cancelar</button>
+          <button type="button" class="btn-ghost" id="expense-modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
           <button type="submit" class="btn-primary">${isEdit ? 'Actualizar gasto' : 'Guardar gasto'}</button>
         </div>
       </form>
@@ -1845,7 +1999,8 @@ function _startApp() {
       document.getElementById('security-modal-overlay').style.display = 'none';
   });
 
-  $('source-date').valueAsDate = new Date();
+  const srcDateEl = $('source-date');
+  if (srcDateEl) srcDateEl.valueAsDate = new Date();
   applyTheme();
   renderAll();
   initCustomSelects();
