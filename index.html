@@ -157,38 +157,10 @@
             <h1>Fuentes de ingreso</h1>
             <p class="muted">Administra tus fuentes y su distribución</p>
           </div>
-          <button type="button" class="icon-btn quick-add-btn" id="toggle-source-form" title="Agregar fuente">+</button>
-        </div>
-
-        <div class="card collapsible-card" id="source-form-card" style="display:none">
-          <div class="card-header">
-            <h3 id="source-form-title">Nueva fuente</h3>
-          </div>
-          <form id="source-form" class="form-grid">
-            <div class="field">
-              <label>Nombre</label>
-              <input id="source-name" placeholder="Ej. Salario, Beca..." required />
-            </div>
-            <div class="field">
-              <label>Monto (₡)</label>
-              <input id="source-amount" type="number" min="0" step="0.01" placeholder="0.00" required />
-            </div>
-            <div class="field">
-              <label>Fecha esperada</label>
-              <input id="source-date" type="date" required />
-            </div>
-            <div class="field">
-              <label>Estado</label>
-              <select id="source-status">
-                <option value="pendiente">⏳ Pendiente</option>
-                <option value="recibido">✅ Recibido</option>
-              </select>
-            </div>
-            <div class="field form-actions">
-              <button type="submit" id="source-submit-btn" class="btn-primary">Guardar fuente</button>
-              <button type="button" id="cancel-edit-btn" class="btn-ghost" style="display:none">Cancelar</button>
-            </div>
-          </form>
+          <button type="button" class="btn-primary" onclick="openSourceModal()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nueva fuente
+          </button>
         </div>
 
         <div id="sources"></div>
@@ -201,7 +173,7 @@
             <h1>Categorías</h1>
             <p class="muted">Presupuesto consolidado y balance en tiempo real</p>
           </div>
-          <button type="button" class="btn-primary" id="add-category-btn">
+          <button type="button" class="btn-primary" onclick="openCategoryModal()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Nueva categoría
           </button>
@@ -217,85 +189,10 @@
             <h1>Gastos</h1>
             <p class="muted">Registra y revisa tus movimientos financieros</p>
           </div>
-          <button type="button" class="icon-btn quick-add-btn" id="toggle-expense-form" title="Registrar gasto">+</button>
-        </div>
-
-        <div class="card collapsible-card" id="expense-form-card" style="display:none">
-          <div class="card-header">
-            <h3 id="expense-form-title">Registrar nuevo gasto</h3>
-          </div>
-          <form id="expense-form" class="form-grid expense-smart-form">
-            <!-- Step 1: Fuente -->
-            <div class="field">
-              <label class="field-label-step">
-                <span class="step-num">1</span>
-                Fuente de ingreso
-              </label>
-              <select id="expense-source" required></select>
-              <span class="field-hint" id="expense-source-hint">Selecciona de dónde sale el dinero</span>
-            </div>
-
-            <!-- Step 2: Categoría -->
-            <div class="field">
-              <label class="field-label-step">
-                <span class="step-num">2</span>
-                Categoría asignada
-              </label>
-              <select id="expense-category" required></select>
-              <span class="field-hint" id="expense-category-hint">Categorías con presupuesto en esta fuente</span>
-            </div>
-
-            <!-- Alert if source has no categories -->
-            <div id="expense-no-cat-alert" class="expense-no-cat-alert" style="display:none">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              <div>
-                <b>Esta fuente no tiene categorías asignadas</b>
-                <p>Para registrar un gasto, primero asigna presupuesto a una categoría en esta fuente.</p>
-              </div>
-              <button type="button" class="btn-secondary btn-sm" id="expense-goto-source-btn">Asignar ahora →</button>
-            </div>
-
-            <!-- Step 3: Monto -->
-            <div class="field">
-              <label class="field-label-step">
-                <span class="step-num">3</span>
-                Monto del gasto (₡)
-              </label>
-              <div class="amount-input-wrap">
-                <span class="currency-symbol">₡</span>
-                <input id="expense-amount" type="number" min="0.01" step="0.01" placeholder="0.00" required autocomplete="off" />
-              </div>
-            </div>
-
-            <!-- Step 4: Fecha -->
-            <div class="field">
-              <label class="field-label-step">
-                <span class="step-num">4</span>
-                Fecha del gasto
-              </label>
-              <input id="expense-date" type="date" required />
-            </div>
-
-            <!-- Step 5: Descripción -->
-            <div class="field field-full">
-              <label class="field-label-step">
-                <span class="step-num">5</span>
-                Descripción / Concepto
-              </label>
-              <input id="expense-desc" placeholder="Ej. Supermercado, gasolina, almuerzo, farmacia..." required />
-            </div>
-
-            <!-- Live Simulation / Balance preview -->
-            <div id="expense-sim-box" class="expense-sim-box" style="display:none"></div>
-
-            <div class="field form-actions field-full">
-              <button type="submit" class="btn-primary" id="expense-submit-btn">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                Guardar gasto
-              </button>
-              <button type="button" class="btn-ghost" id="expense-cancel-btn">Cancelar</button>
-            </div>
-          </form>
+          <button type="button" class="btn-primary" onclick="openExpenseModal()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Registrar gasto
+          </button>
         </div>
 
         <div class="card">
@@ -459,6 +356,11 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <script src="firebase-config.js"></script>
+
+  <!-- GENERAL MODAL OVERLAY -->
+  <div id="modal-overlay" class="modal-overlay" style="display:none">
+    <div class="modal" id="modal-content"></div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="auth.js"></script>

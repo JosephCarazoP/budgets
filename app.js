@@ -530,7 +530,7 @@ function renderRecentExpenses() {
 }
 
 /* ============================================================
-   RENDER SOURCES (ULTRA-COMPACT WITH INFO & ASSIGNMENT MODALS)
+   RENDER SOURCES (COMPACT CARDS WITH PRESUPUESTO, ASIGNADO & GASTADO)
    ============================================================ */
 
 function renderSources() {
@@ -538,28 +538,32 @@ function renderSources() {
   if (!state.sources.length) {
     el.innerHTML = `<div class="empty-state" style="padding:2rem">
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-      <p>Sin fuentes de ingreso</p><span>Crea tu primera fuente arriba</span></div>`;
+      <p>Sin fuentes de ingreso</p><span>Crea tu primera fuente con el botón de arriba</span></div>`;
     return;
   }
 
   el.innerHTML = state.sources.map((s) => {
     const t = sourceTotals(s);
-    // % of source assigned to categories
-    const pctAssigned = Number(s.amount) ? Math.min(100, (t.assigned / Number(s.amount)) * 100) : 0;
-    // % of assigned money spent
     const pctSpent = t.assigned > 0 ? Math.min(100, (t.spent / t.assigned) * 100) : 0;
 
     const badge = s.status === 'recibido'
-      ? `<span class="badge badge-received">✓ Recibido</span>`
-      : `<span class="badge badge-pending">⏳ Pendiente</span>`;
+      ? `<span class="badge badge-received">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Recibido
+        </span>`
+      : `<span class="badge badge-pending">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Pendiente
+        </span>`;
 
     const catCount = Object.keys(s.distribution || {}).length;
+    const catText = catCount === 1 ? '1 categoría' : `${catCount} categorías`;
 
     return `<div class="source-card">
       <div class="source-header">
         <div class="source-title-wrap">
           <span class="source-name">${s.name}</span>
-          <span class="badge badge-cats">${catCount} ${catCount === 1 ? 'cat.' : 'cats.'}</span>
+          <span class="badge badge-cats">${catText}</span>
         </div>
         <div class="source-meta">
           ${badge}
@@ -569,15 +573,24 @@ function renderSources() {
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               Asignaciones
             </button>
-            <button type="button" class="btn-secondary btn-sm" onclick="startEditSource('${s.id}')">Editar</button>
-            <button type="button" class="btn-danger btn-sm" onclick="deleteSource('${s.id}')">✕</button>
+            <button type="button" class="btn-secondary btn-sm" onclick="openSourceModal('${s.id}')">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Editar
+            </button>
+            <button type="button" class="btn-danger btn-sm" onclick="deleteSource('${s.id}')" title="Eliminar fuente">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
           </div>
         </div>
       </div>
 
-      <!-- Compact body: Only Asignado & Gastado on the outside -->
+      <!-- Compact exterior body: Presupuesto (Total), Asignado & Gastado -->
       <div class="source-compact-body">
         <div class="source-compact-metrics">
+          <div class="compact-metric">
+            <span class="label">Presupuesto:</span>
+            <span class="val total">${money(s.amount)}</span>
+          </div>
           <div class="compact-metric">
             <span class="label">Asignado:</span>
             <span class="val">${money(t.assigned)}</span>
@@ -597,6 +610,130 @@ function renderSources() {
     </div>`;
   }).join('');
 }
+
+/* ============================================================
+   SOURCE MODAL (NUEVA / EDITAR FUENTE DE INGRESO)
+   ============================================================ */
+
+window.openSourceModal = function(sourceId = null) {
+  const isEdit = !!sourceId;
+  const s = isEdit ? state.sources.find((x) => x.id === sourceId) : null;
+
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  content.innerHTML = `
+    <div class="modal-info-content" style="max-width:440px">
+      <div class="modal-info-header">
+        <h3>${isEdit ? 'Editar fuente de ingreso' : 'Nueva fuente de ingreso'}</h3>
+        <button type="button" class="btn-ghost btn-sm" id="source-modal-close" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+      </div>
+
+      <form id="source-modal-form" style="display:flex;flex-direction:column;gap:0.95rem;margin-top:0.5rem">
+        <div class="field">
+          <label class="field-label-step">
+            <span class="step-num">1</span>
+            NOMBRE DE LA FUENTE
+          </label>
+          <input id="modal-src-name" placeholder="Ej. Salario, Freelance, Beca..." value="${s ? s.name : ''}" required />
+        </div>
+
+        <div class="field">
+          <label class="field-label-step">
+            <span class="step-num">2</span>
+            MONTO TOTAL DEL INGRESO (₡)
+          </label>
+          <div class="amount-input-wrap">
+            <span class="currency-symbol">₡</span>
+            <input id="modal-src-amount" type="number" min="0.01" step="0.01" placeholder="0.00" value="${s ? s.amount : ''}" required />
+          </div>
+        </div>
+
+        <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap:0.75rem; padding:0">
+          <div class="field">
+            <label class="field-label-step">
+              <span class="step-num">3</span>
+              FECHA ESPERADA
+            </label>
+            <input id="modal-src-date" type="date" value="${s ? s.date : todayStr}" required />
+          </div>
+
+          <div class="field">
+            <label class="field-label-step">
+              <span class="step-num">4</span>
+              ESTADO
+            </label>
+            <select id="modal-src-status">
+              <option value="pendiente" ${s && s.status === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+              <option value="recibido" ${s && s.status === 'recibido' ? 'selected' : ''}>Recibido</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.5rem">
+          <button type="button" class="btn-ghost" id="source-modal-cancel">Cancelar</button>
+          <button type="submit" class="btn-primary">${isEdit ? 'Actualizar fuente' : 'Guardar fuente'}</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  _buildCsel('modal-src-status', { isStatus: true });
+
+  const nameInput = $('modal-src-name');
+  overlay.style.display = 'flex';
+  nameInput.focus();
+
+  // Mobile Keyboard Focus Scroll Handler
+  content.querySelectorAll('input, select').forEach((inp) => {
+    inp.addEventListener('focus', () => {
+      setTimeout(() => inp.scrollIntoView({ block: 'center', behavior: 'smooth' }), 200);
+    });
+  });
+
+  $('source-modal-close')?.addEventListener('click', () => { overlay.style.display = 'none'; });
+  $('source-modal-cancel')?.addEventListener('click', () => { overlay.style.display = 'none'; });
+  overlay.onclick = (ev) => { if (ev.target === overlay) overlay.style.display = 'none'; };
+
+  $('source-modal-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const payload = {
+      name: $('modal-src-name').value.trim(),
+      amount: Number($('modal-src-amount').value),
+      date: $('modal-src-date').value,
+      status: $('modal-src-status').value
+    };
+
+    if (!payload.name || !payload.amount || payload.amount <= 0) {
+      toast('Ingresa un nombre y monto válido');
+      return;
+    }
+
+    if (isEdit) {
+      const src = state.sources.find((x) => x.id === sourceId);
+      if (src) Object.assign(src, payload);
+      toast(`Fuente "${payload.name}" actualizada`);
+    } else {
+      state.sources.push({ id: uid(), ...payload, distribution: {} });
+      toast(`Fuente "${payload.name}" creada`);
+    }
+
+    overlay.style.display = 'none';
+    renderAll();
+  });
+};
+
+window.deleteSource = function(id) {
+  if (!confirm('¿Eliminar esta fuente y todos sus gastos asociados?')) return;
+  state.sources = state.sources.filter((s) => s.id !== id);
+  state.expenses = state.expenses.filter((e) => e.sourceId !== id);
+  state.assignments = state.assignments.filter((a) => a.sourceId !== id);
+  renderAll();
+  toast('Fuente eliminada');
+};
 
 /* ============================================================
    SOURCE INFO MODAL (i) - VISUAL PROGRESS BARS
@@ -738,7 +875,6 @@ window.openSourceAssignmentsModal = function(sourceId) {
     const t = sourceTotals(freshSource);
     const sourceAssignments = state.assignments.filter((a) => a.sourceId === sourceId);
 
-    // Available categories not yet assigned, or all categories
     const catOpts = state.categories.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
 
     content.innerHTML = `
@@ -809,6 +945,13 @@ window.openSourceAssignmentsModal = function(sourceId) {
 
     _buildCsel('modal-asg-category', { isCategory: true });
 
+    // Scroll focus handler
+    content.querySelectorAll('input, select').forEach((inp) => {
+      inp.addEventListener('focus', () => {
+        setTimeout(() => inp.scrollIntoView({ block: 'center', behavior: 'smooth' }), 200);
+      });
+    });
+
     $('assignments-modal-close')?.addEventListener('click', () => { overlay.style.display = 'none'; });
     $('modal-asg-done-btn')?.addEventListener('click', () => { overlay.style.display = 'none'; });
 
@@ -821,7 +964,7 @@ window.openSourceAssignmentsModal = function(sourceId) {
       const curDist = { ...(freshSource.distribution || {}) };
       const curTotal = Object.values(curDist).reduce((x, y) => x + Number(y || 0), 0);
       if (curTotal + amt > Number(freshSource.amount)) {
-        toast(`⚠️ Excede el total de la fuente (${money(freshSource.amount)})`);
+        toast(`Excede el total de la fuente (${money(freshSource.amount)})`);
         return;
       }
 
@@ -849,7 +992,7 @@ window.saveAssignmentInline = function(assignmentId, sourceId) {
   if (!input) return;
   const newAmt = Number(input.value);
   if (!Number.isFinite(newAmt) || newAmt <= 0) {
-    toast('⚠️ Monto inválido');
+    toast('Monto inválido');
     return;
   }
   const asg = state.assignments.find((a) => a.id === assignmentId);
@@ -859,7 +1002,7 @@ window.saveAssignmentInline = function(assignmentId, sourceId) {
   const currentTotal = Object.values(src.distribution || {}).reduce((x, y) => x + Number(y || 0), 0);
   const projected = currentTotal - Number(asg.amount) + newAmt;
   if (projected > Number(src.amount)) {
-    toast(`⚠️ Excede el total de la fuente (${money(src.amount)})`);
+    toast(`Excede el total de la fuente (${money(src.amount)})`);
     return;
   }
 
@@ -880,76 +1023,7 @@ window.removeAssignmentFromModal = function(assignmentId, sourceId) {
 };
 
 /* ============================================================
-   SOURCE CRUD
-   ============================================================ */
-
-window.startEditSource = function(id) {
-  const s = state.sources.find((x) => x.id === id);
-  if (!s) return;
-  state.editingSourceId = id;
-  $('source-name').value = s.name;
-  $('source-amount').value = s.amount;
-  $('source-date').value = s.date;
-  $('source-status').value = s.status;
-  _refreshCsel('source-status');
-  $('source-submit-btn').textContent = 'Actualizar fuente';
-  $('source-form-title').textContent = 'Editar fuente';
-  $('cancel-edit-btn').style.display = '';
-  $('source-form-card').style.display = '';
-  $('source-form-card').classList.add('is-open');
-  $('toggle-source-form').textContent = '−';
-  switchTab('sources');
-  $('source-name').focus();
-};
-
-window.deleteSource = function(id) {
-  if (!confirm('¿Eliminar esta fuente y todos sus gastos asociados?')) return;
-  state.sources = state.sources.filter((s) => s.id !== id);
-  state.expenses = state.expenses.filter((e) => e.sourceId !== id);
-  state.assignments = state.assignments.filter((a) => a.sourceId !== id);
-  if (state.editingSourceId === id) cancelEdit();
-  renderAll();
-  toast('Fuente eliminada');
-};
-
-function cancelEdit() {
-  state.editingSourceId = null;
-  $('source-form').reset();
-  $('source-date').valueAsDate = new Date();
-  $('source-submit-btn').textContent = 'Guardar fuente';
-  $('source-form-title').textContent = 'Nueva fuente';
-  $('cancel-edit-btn').style.display = 'none';
-}
-
-$('cancel-edit-btn').addEventListener('click', cancelEdit);
-
-$('source-form').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const payload = {
-    name: $('source-name').value.trim(),
-    amount: Number($('source-amount').value),
-    date: $('source-date').value,
-    status: $('source-status').value
-  };
-  if (state.editingSourceId) {
-    const s = state.sources.find((x) => x.id === state.editingSourceId);
-    Object.assign(s, payload);
-    toast(`Fuente "${payload.name}" actualizada`);
-    cancelEdit();
-  } else {
-    state.sources.push({ id: uid(), ...payload, distribution: {} });
-    toast(`Fuente "${payload.name}" creada`);
-    e.target.reset();
-    $('source-date').valueAsDate = new Date();
-  }
-  renderAll();
-  $('source-form-card').classList.remove('is-open');
-  $('source-form-card').style.display = 'none';
-  $('toggle-source-form').textContent = '+';
-});
-
-/* ============================================================
-   RENDER CATEGORIES & CATEGORY MODAL
+   RENDER CATEGORIES & CATEGORY MODAL (GOTERO COLOR PICKER)
    ============================================================ */
 
 const PRESET_COLORS = [
@@ -963,6 +1037,7 @@ window.openCategoryModal = function(catName = null) {
   const existing = isEdit ? state.categories.find((c) => c.name === catName) : null;
 
   let selectedColor = existing ? existing.color : PRESET_COLORS[Math.floor(Math.random() * PRESET_COLORS.length)];
+  const isCustomColor = !PRESET_COLORS.some((c) => c.toLowerCase() === selectedColor.toLowerCase());
 
   const overlay = $('modal-overlay');
   const content = $('modal-content');
@@ -987,9 +1062,18 @@ window.openCategoryModal = function(catName = null) {
             ${PRESET_COLORS.map((c) => `
               <div class="color-swatch ${c.toLowerCase() === selectedColor.toLowerCase() ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>
             `).join('')}
-            <div class="color-input-native-wrap" title="Color personalizado">
-              <input type="color" id="cat-native-color" value="${selectedColor}" />
-            </div>
+
+            <!-- Gotero Button for Custom Color -->
+            <label class="color-swatch custom-color-picker ${isCustomColor ? 'selected' : ''}" id="gotero-swatch" title="Color personalizado con gotero" style="background:${isCustomColor ? selectedColor : 'var(--bg-alt)'}">
+              <input type="color" id="cat-native-color" value="${selectedColor}" class="sr-only-color-input" />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m2 22 5-5"/>
+                <path d="M9.5 14.5 16 8"/>
+                <path d="m17 7 3-3a2.12 2.12 0 0 1 3 3l-3 3"/>
+                <path d="m14.5 9.5 3 3"/>
+                <path d="M11.5 12.5 4 20v2h2l7.5-7.5"/>
+              </svg>
+            </label>
           </div>
         </div>
 
@@ -1008,25 +1092,28 @@ window.openCategoryModal = function(catName = null) {
     </div>
   `;
 
-  // Color Swatch clicks
-  const swatches = content.querySelectorAll('.color-swatch');
+  const swatches = content.querySelectorAll('.color-swatch:not(.custom-color-picker)');
+  const goteroSwatch = $('gotero-swatch');
   const nativeColorInput = $('cat-native-color');
   const previewBadge = $('cat-preview-badge');
   const nameInput = $('cat-modal-name');
 
   swatches.forEach((sw) => {
     sw.addEventListener('click', () => {
-      swatches.forEach((s) => s.classList.remove('selected'));
+      content.querySelectorAll('.color-swatch').forEach((s) => s.classList.remove('selected'));
       sw.classList.add('selected');
       selectedColor = sw.getAttribute('data-color');
       nativeColorInput.value = selectedColor;
       previewBadge.style.background = selectedColor;
+      goteroSwatch.style.background = 'var(--bg-alt)';
     });
   });
 
   nativeColorInput.addEventListener('input', (ev) => {
-    swatches.forEach((s) => s.classList.remove('selected'));
+    content.querySelectorAll('.color-swatch').forEach((s) => s.classList.remove('selected'));
+    goteroSwatch.classList.add('selected');
     selectedColor = ev.target.value;
+    goteroSwatch.style.background = selectedColor;
     previewBadge.style.background = selectedColor;
   });
 
@@ -1036,6 +1123,13 @@ window.openCategoryModal = function(catName = null) {
 
   overlay.style.display = 'flex';
   nameInput.focus();
+
+  // Scroll focus listener for mobile keyboard safety
+  content.querySelectorAll('input').forEach((inp) => {
+    inp.addEventListener('focus', () => {
+      setTimeout(() => inp.scrollIntoView({ block: 'center', behavior: 'smooth' }), 200);
+    });
+  });
 
   $('cat-modal-close')?.addEventListener('click', () => { overlay.style.display = 'none'; });
   $('cat-modal-cancel')?.addEventListener('click', () => { overlay.style.display = 'none'; });
@@ -1047,7 +1141,7 @@ window.openCategoryModal = function(catName = null) {
     if (!name) return;
 
     if (!isEdit && state.categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
-      toast('⚠️ Esa categoría ya existe');
+      toast('Esa categoría ya existe');
       return;
     }
 
@@ -1076,19 +1170,13 @@ window.openCategoryModal = function(catName = null) {
   });
 };
 
-$('add-category-btn')?.addEventListener('click', () => openCategoryModal());
-
 function renderCategories() {
   const map = categoryMap();
   const el = $('categories');
 
-  // Update filter-category select
   const opts = state.categories.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
   $('filter-category').innerHTML = `<option value="">Todas las categorías</option>${opts}`;
   _refreshCsel('filter-category');
-
-  // Sync expense selects
-  syncExpenseCategoryOptions();
 
   const entries = Object.entries(map);
   if (!entries.length) {
@@ -1121,8 +1209,14 @@ function renderCategories() {
           ${cat}
         </div>
         <div class="category-card-actions">
-          <button type="button" class="btn-secondary btn-sm" onclick="openCategoryModal('${cat.replace(/'/g, "\\'")}')" title="Editar nombre y color">✎ Editar</button>
-          <button type="button" class="btn-danger btn-sm" onclick="deleteCategory('${cat.replace(/'/g, "\\'")}')" title="Eliminar categoría">🗑</button>
+          <button type="button" class="btn-secondary btn-sm" onclick="openCategoryModal('${cat.replace(/'/g, "\\'")}')" title="Editar categoría">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Editar
+          </button>
+          <button type="button" class="btn-danger btn-sm" onclick="deleteCategory('${cat.replace(/'/g, "\\'")}')" title="Eliminar categoría">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Eliminar
+          </button>
         </div>
       </div>
 
@@ -1171,250 +1265,319 @@ window.deleteCategory = function(name) {
 };
 
 /* ============================================================
-   SMART EXPENSES UX & SIMULATION
+   EXPENSE MODAL & SMART BALANCING (CONVERTED TO COMPACT MODAL)
    ============================================================ */
 
-function syncExpenseCategoryOptions() {
-  const sourceId = $('expense-source')?.value;
-  const catSelect = $('expense-category');
-  const alertNoCat = $('expense-no-cat-alert');
-  const simBox = $('expense-sim-box');
-  if (!catSelect) return;
+window.openExpenseModal = function(expenseId = null) {
+  const isEdit = !!expenseId;
+  const ex = isEdit ? state.expenses.find((x) => x.id === expenseId) : null;
 
-  if (!sourceId) {
-    catSelect.innerHTML = '<option value="">Primero elige una fuente</option>';
-    _refreshCsel('expense-category');
-    if (alertNoCat) alertNoCat.style.display = 'none';
-    if (simBox) simBox.style.display = 'none';
-    return;
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const srcOpts = state.sources.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+
+  content.innerHTML = `
+    <div class="modal-info-content" style="max-width:460px">
+      <div class="modal-info-header">
+        <h3>${isEdit ? 'Editar gasto' : 'Registrar nuevo gasto'}</h3>
+        <button type="button" class="btn-ghost btn-sm" id="expense-modal-close" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+      </div>
+
+      <form id="expense-modal-form" class="expense-smart-form" style="padding:0.5rem 0;display:flex;flex-direction:column;gap:0.9rem">
+        <!-- Step 1: SELECCIONA LA FUENTE DE LA QUE GASTARÁS DINERO -->
+        <div class="field">
+          <label class="field-label-step">
+            <span class="step-num">1</span>
+            SELECCIONA LA FUENTE DE LA QUE GASTARÁS DINERO
+          </label>
+          <select id="modal-exp-source" required>${srcOpts}</select>
+        </div>
+
+        <!-- Step 2: SELECCIONA LA CATEGORÍA DEL GASTO -->
+        <div class="field">
+          <label class="field-label-step">
+            <span class="step-num">2</span>
+            SELECCIONA LA CATEGORÍA DEL GASTO
+          </label>
+          <select id="modal-exp-category" required></select>
+        </div>
+
+        <!-- Alert if source has no categories -->
+        <div id="modal-exp-no-cat-alert" class="expense-no-cat-alert" style="display:none">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div>
+            <b>Esta fuente no tiene categorías asignadas</b>
+            <p>Primero asigna presupuesto a una categoría en esta fuente.</p>
+          </div>
+          <button type="button" class="btn-secondary btn-sm" id="modal-exp-goto-asg">Asignar ahora →</button>
+        </div>
+
+        <!-- Step 3: INGRESA CUÁNTO GASTASTE Y FECHA DEL GASTO -->
+        <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap:0.75rem; padding:0">
+          <div class="field">
+            <label class="field-label-step">
+              <span class="step-num">3</span>
+              MONTO DEL GASTO (₡)
+            </label>
+            <div class="amount-input-wrap">
+              <span class="currency-symbol">₡</span>
+              <input id="modal-exp-amount" type="number" min="0.01" step="0.01" placeholder="0.00" value="${ex ? ex.amount : ''}" required autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label-step">
+              <span class="step-num">4</span>
+              FECHA DEL GASTO
+            </label>
+            <input id="modal-exp-date" type="date" value="${ex ? ex.date : todayStr}" required />
+          </div>
+        </div>
+
+        <!-- Step 4: CONCEPTO -->
+        <div class="field">
+          <label class="field-label-step">
+            <span class="step-num">5</span>
+            CONCEPTO
+          </label>
+          <input id="modal-exp-desc" placeholder="Ej. Supermercado, gasolina, almuerzo..." value="${ex ? ex.desc : ''}" required />
+        </div>
+
+        <!-- Live Simulation / Balance preview -->
+        <div id="modal-exp-sim-box" class="expense-sim-box" style="display:none"></div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.4rem">
+          <button type="button" class="btn-ghost" id="expense-modal-cancel">Cancelar</button>
+          <button type="submit" class="btn-primary">${isEdit ? 'Actualizar gasto' : 'Guardar gasto'}</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  _buildCsel('modal-exp-source', {});
+
+  const srcSelect = $('modal-exp-source');
+  const catSelect = $('modal-exp-category');
+  const alertNoCat = $('modal-exp-no-cat-alert');
+  const simBox = $('modal-exp-sim-box');
+  const amountInput = $('modal-exp-amount');
+
+  if (ex) {
+    srcSelect.value = ex.sourceId;
+    _refreshCsel('modal-exp-source');
   }
 
-  const source = state.sources.find((s) => s.id === sourceId);
-  if (!source) return;
+  function syncModalCatOptions() {
+    const sourceId = srcSelect.value;
+    if (!sourceId) {
+      catSelect.innerHTML = '<option value="">Primero elige una fuente</option>';
+      _refreshCsel('modal-exp-category');
+      alertNoCat.style.display = 'none';
+      simBox.style.display = 'none';
+      return;
+    }
+    const source = state.sources.find((s) => s.id === sourceId);
+    if (!source) return;
 
-  const assignedCats = Object.entries(source.distribution || {}).filter(([_, amt]) => amt > 0);
+    const assignedCats = Object.entries(source.distribution || {}).filter(([_, amt]) => amt > 0);
 
-  if (assignedCats.length === 0) {
-    catSelect.innerHTML = '<option value="">(Sin categorías asignadas)</option>';
-    _refreshCsel('expense-category');
-    if (alertNoCat) {
+    if (assignedCats.length === 0) {
+      catSelect.innerHTML = '<option value="">(Sin categorías asignadas)</option>';
+      _refreshCsel('modal-exp-category');
       alertNoCat.style.display = 'flex';
-      const gotoBtn = $('expense-goto-source-btn');
+      const gotoBtn = $('modal-exp-goto-asg');
       if (gotoBtn) {
         gotoBtn.onclick = () => {
+          overlay.style.display = 'none';
           openSourceAssignmentsModal(sourceId);
         };
       }
-    }
-    if (simBox) simBox.style.display = 'none';
-    return;
-  }
-
-  if (alertNoCat) alertNoCat.style.display = 'none';
-
-  // Populate options with available balance for each category in this source
-  catSelect.innerHTML = assignedCats.map(([catName, assignedAmt]) => {
-    const spent = state.expenses
-      .filter((e) => e.sourceId === sourceId && e.category === catName)
-      .reduce((a, b) => a + Number(b.amount), 0);
-    const available = assignedAmt - spent;
-    return `<option value="${catName}">${catName} (Disp: ${money(available)})</option>`;
-  }).join('');
-
-  _refreshCsel('expense-category');
-  updateExpenseSimulation();
-}
-
-function updateExpenseSimulation() {
-  const sourceId = $('expense-source')?.value;
-  const category = $('expense-category')?.value;
-  const amountInput = $('expense-amount');
-  const amount = Number(amountInput?.value || 0);
-  const simBox = $('expense-sim-box');
-  if (!simBox) return;
-
-  if (!sourceId || !category) {
-    simBox.style.display = 'none';
-    return;
-  }
-
-  const source = state.sources.find((s) => s.id === sourceId);
-  if (!source || !source.distribution || !source.distribution[category]) {
-    simBox.style.display = 'none';
-    return;
-  }
-
-  const assigned = Number(source.distribution[category]);
-  const spent = state.expenses
-    .filter((e) => e.sourceId === sourceId && e.category === category)
-    .reduce((a, b) => a + Number(b.amount), 0);
-  const currentAvailable = assigned - spent;
-  const newAvailable = currentAvailable - amount;
-  const isOver = newAvailable < 0;
-
-  simBox.style.display = 'flex';
-  simBox.innerHTML = `
-    <div class="sim-row">
-      <span style="color:var(--text-2)">Presupuesto categoría: <b>${category}</b></span>
-      <span>Asignado: <b>${money(assigned)}</b> · Gastado: <b>${money(spent)}</b></span>
-    </div>
-    <div class="sim-row">
-      <span style="font-weight:500;color:var(--text)">Balance resultante:</span>
-      <div class="sim-calc-flow">
-        <span>${money(currentAvailable)}</span>
-        <span class="arrow">− ${money(amount)} →</span>
-        <span class="new-bal ${isOver ? 'over' : ''}">${money(newAvailable)}</span>
-      </div>
-    </div>
-    ${isOver ? `
-      <div style="font-size:0.75rem;color:var(--danger);font-weight:500;margin-top:0.2rem">
-        ⚠️ Atención: Este gasto excede el presupuesto disponible de la categoría en esta fuente por ${money(Math.abs(newAvailable))}.
-      </div>
-    ` : ''}
-  `;
-}
-
-$('expense-source')?.addEventListener('change', () => {
-  syncExpenseCategoryOptions();
-});
-
-$('expense-category')?.addEventListener('change', () => {
-  updateExpenseSimulation();
-});
-
-$('expense-amount')?.addEventListener('input', () => {
-  updateExpenseSimulation();
-});
-
-/* ============================================================
-   EXPENSE SUBMIT & CRUD
-   ============================================================ */
-
-$('expense-form')?.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const sourceId = $('expense-source').value;
-  const category = $('expense-category').value;
-  const amount   = Number($('expense-amount').value);
-  const date     = $('expense-date').value || new Date().toISOString().slice(0, 10);
-  const desc     = $('expense-desc').value.trim();
-
-  if (!sourceId) { toast('⚠️ Selecciona una fuente de ingreso'); return; }
-  if (!category) { toast('⚠️ Selecciona una categoría'); return; }
-  if (!Number.isFinite(amount) || amount <= 0) { toast('⚠️ Ingresa un monto válido'); return; }
-
-  const source   = state.sources.find((s) => s.id === sourceId);
-  const assigned = Number(source?.distribution?.[category] || 0);
-  const spent    = state.expenses
-    .filter((x) => x.sourceId === sourceId && x.category === category && (!state.editingExpenseId || x.id !== state.editingExpenseId))
-    .reduce((a, b) => a + Number(b.amount), 0);
-
-  if (spent + amount > assigned) {
-    if (!confirm(`⚠️ Este gasto excede el presupuesto disponible (${money(assigned - spent)}). ¿Deseas registrarlo de todos modos?`)) {
+      simBox.style.display = 'none';
       return;
     }
+
+    alertNoCat.style.display = 'none';
+
+    catSelect.innerHTML = assignedCats.map(([catName, assignedAmt]) => {
+      const spent = state.expenses
+        .filter((e) => e.sourceId === sourceId && e.category === catName && (!isEdit || e.id !== expenseId))
+        .reduce((a, b) => a + Number(b.amount), 0);
+      const available = assignedAmt - spent;
+      return `<option value="${catName}">${catName} (Disp: ${money(available)})</option>`;
+    }).join('');
+
+    _buildCsel('modal-exp-category', { isCategory: true });
+    if (ex && ex.sourceId === sourceId) {
+      catSelect.value = ex.category;
+      _refreshCsel('modal-exp-category');
+    }
+    updateModalSim();
   }
 
-  if (state.editingExpenseId) {
-    const ex = state.expenses.find((x) => x.id === state.editingExpenseId);
-    if (ex) Object.assign(ex, { sourceId, category, amount, desc, date });
-    state.editingExpenseId = null;
-    toast(`Gasto de ${money(amount)} actualizado`);
-  } else {
-    state.expenses.push({ id: uid(), sourceId, category, amount, desc, date });
-    toast(`Gasto de ${money(amount)} registrado`);
+  function updateModalSim() {
+    const sourceId = srcSelect.value;
+    const category = catSelect.value;
+    const amount = Number(amountInput.value || 0);
+    if (!sourceId || !category) { simBox.style.display = 'none'; return; }
+
+    const source = state.sources.find((s) => s.id === sourceId);
+    if (!source || !source.distribution || !source.distribution[category]) { simBox.style.display = 'none'; return; }
+
+    const assigned = Number(source.distribution[category]);
+    const spent = state.expenses
+      .filter((e) => e.sourceId === sourceId && e.category === category && (!isEdit || e.id !== expenseId))
+      .reduce((a, b) => a + Number(b.amount), 0);
+    const currentAvailable = assigned - spent;
+    const newAvailable = currentAvailable - amount;
+    const isOver = newAvailable < 0;
+
+    simBox.style.display = 'flex';
+    simBox.innerHTML = `
+      <div class="sim-row">
+        <span style="color:var(--text-2)">Presupuesto de <b>${category}</b> en esta fuente</span>
+        <span>Asignado: <b>${money(assigned)}</b></span>
+      </div>
+      <div class="sim-row">
+        <span style="font-weight:500;color:var(--text)">Balance resultante:</span>
+        <div class="sim-calc-flow">
+          <span>${money(currentAvailable)}</span>
+          <span class="arrow">− ${money(amount)} →</span>
+          <span class="new-bal ${isOver ? 'over' : ''}">${money(newAvailable)}</span>
+        </div>
+      </div>
+      ${isOver ? `
+        <div style="font-size:0.75rem;color:var(--danger);font-weight:500;margin-top:0.25rem;display:flex;align-items:center;gap:0.35rem">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Excede el presupuesto disponible de la categoría por ${money(Math.abs(newAvailable))}.
+        </div>
+      ` : ''}
+    `;
   }
 
-  e.target.reset();
-  $('expense-date').valueAsDate = new Date();
-  $('expense-submit-btn').textContent = 'Guardar gasto';
-  $('expense-form-title').textContent = 'Registrar nuevo gasto';
-  const simBox = $('expense-sim-box');
-  if (simBox) simBox.style.display = 'none';
+  syncModalCatOptions();
 
-  renderAll();
-  $('expense-form-card').classList.remove('is-open');
-  $('expense-form-card').style.display = 'none';
-  $('toggle-expense-form').textContent = '+';
-});
+  srcSelect.addEventListener('change', syncModalCatOptions);
+  catSelect.addEventListener('change', updateModalSim);
+  amountInput.addEventListener('input', updateModalSim);
 
-window.editExpense = function(id) {
-  const ex = state.expenses.find((x) => x.id === id);
-  if (!ex) return;
-  state.editingExpenseId = id;
-  $('expense-source').value = ex.sourceId;
-  _refreshCsel('expense-source');
-  syncExpenseCategoryOptions();
+  overlay.style.display = 'flex';
+  amountInput.focus();
 
-  $('expense-category').value = ex.category;
-  _refreshCsel('expense-category');
+  // Scroll focus listener for mobile keyboard safety
+  content.querySelectorAll('input, select').forEach((inp) => {
+    inp.addEventListener('focus', () => {
+      setTimeout(() => inp.scrollIntoView({ block: 'center', behavior: 'smooth' }), 200);
+    });
+  });
 
-  $('expense-amount').value = ex.amount;
-  $('expense-date').value = ex.date;
-  $('expense-desc').value = ex.desc;
-  $('expense-submit-btn').textContent = 'Actualizar gasto';
-  $('expense-form-title').textContent = 'Editar gasto';
+  $('expense-modal-close')?.addEventListener('click', () => { overlay.style.display = 'none'; });
+  $('expense-modal-cancel')?.addEventListener('click', () => { overlay.style.display = 'none'; });
+  overlay.onclick = (ev) => { if (ev.target === overlay) overlay.style.display = 'none'; };
 
-  updateExpenseSimulation();
+  $('expense-modal-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const sourceId = srcSelect.value;
+    const category = catSelect.value;
+    const amount = Number(amountInput.value);
+    const date = $('modal-exp-date').value || todayStr;
+    const desc = $('modal-exp-desc').value.trim();
 
-  $('expense-form-card').style.display = '';
-  $('expense-form-card').classList.add('is-open');
-  $('toggle-expense-form').textContent = '−';
-  switchTab('expenses');
-  $('expense-amount').focus();
+    if (!sourceId || !category || !amount || amount <= 0) {
+      toast('Ingresa datos válidos para el gasto');
+      return;
+    }
+
+    const source = state.sources.find((s) => s.id === sourceId);
+    const assigned = Number(source?.distribution?.[category] || 0);
+    const spent = state.expenses
+      .filter((x) => x.sourceId === sourceId && x.category === category && (!isEdit || x.id !== expenseId))
+      .reduce((a, b) => a + Number(b.amount), 0);
+
+    if (spent + amount > assigned) {
+      if (!confirm(`Este gasto excede el presupuesto disponible (${money(assigned - spent)}). ¿Deseas registrarlo de todos modos?`)) {
+        return;
+      }
+    }
+
+    if (isEdit) {
+      const existingExp = state.expenses.find((x) => x.id === expenseId);
+      if (existingExp) Object.assign(existingExp, { sourceId, category, amount, desc, date });
+      toast(`Gasto de ${money(amount)} actualizado`);
+    } else {
+      state.expenses.push({ id: uid(), sourceId, category, amount, desc, date });
+      toast(`Gasto de ${money(amount)} guardado`);
+    }
+
+    overlay.style.display = 'none';
+    renderAll();
+  });
 };
+
+/* ============================================================
+   RENDER EXPENSES LIST
+   ============================================================ */
+
+function renderExpensesList() {
+  const filterSrc = $('filter-source')?.value;
+  const filterCat = $('filter-category')?.value;
+
+  let list = [...state.expenses].sort(compareByDateDesc);
+  if (filterSrc) list = list.filter((e) => e.sourceId === filterSrc);
+  if (filterCat) list = list.filter((e) => e.category === filterCat);
+
+  const el = $('expenses-list');
+  if (!el) return;
+
+  if (!list.length) {
+    el.innerHTML = `<div class="empty-state">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+      <p>Sin gastos</p><span>Ajusta los filtros o registra un nuevo gasto</span></div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="expense-table-header">
+      <span>Descripción</span><span>Categoría</span><span>Fuente</span><span>Monto</span><span>Fecha</span><span>Acciones</span>
+    </div>` +
+    list.map((e) => {
+      const src = state.sources.find((s) => s.id === e.sourceId);
+      const cat = state.categories.find((c) => c.name === e.category);
+      return `<div class="expense-row">
+        <div class="exp-col-desc">
+          <div class="exp-desc">${e.desc}</div>
+          <div class="exp-meta-inline">
+            <span class="exp-tag"><span class="exp-tag-dot" style="background:${cat?.color || '#888'}"></span>${e.category}</span>
+            <span class="exp-tag">${src?.name || '—'}</span>
+            <span class="exp-date">${fmt(e.date)}</span>
+          </div>
+        </div>
+        <div class="exp-col-cat"><span class="exp-tag"><span class="exp-tag-dot" style="background:${cat?.color || '#888'}"></span>${e.category}</span></div>
+        <div class="exp-col-src"><span class="exp-tag">${src?.name || '—'}</span></div>
+        <div class="exp-col-amt"><span class="exp-amount">-${money(e.amount)}</span></div>
+        <div class="exp-col-date"><span class="exp-date">${fmt(e.date)}</span></div>
+        <div class="exp-col-actions expense-actions">
+          <button type="button" class="btn-secondary btn-sm" onclick="openExpenseModal('${e.id}')" title="Editar gasto">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Editar
+          </button>
+          <button type="button" class="btn-danger btn-sm" onclick="deleteExpense('${e.id}')" title="Eliminar gasto">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Eliminar
+          </button>
+        </div>
+      </div>`;
+    }).join('');
+}
 
 window.deleteExpense = function(id) {
   if (!confirm('¿Eliminar este gasto?')) return;
   state.expenses = state.expenses.filter((x) => x.id !== id);
-  if (state.editingExpenseId === id) {
-    state.editingExpenseId = null;
-    $('expense-form').reset();
-    $('expense-date').valueAsDate = new Date();
-    $('expense-submit-btn').textContent = 'Guardar gasto';
-    $('expense-form-title').textContent = 'Registrar nuevo gasto';
-  }
   renderAll();
   toast('Gasto eliminado');
 };
-
-$('expense-cancel-btn')?.addEventListener('click', () => {
-  state.editingExpenseId = null;
-  $('expense-form').reset();
-  $('expense-date').valueAsDate = new Date();
-  $('expense-submit-btn').textContent = 'Guardar gasto';
-  $('expense-form-title').textContent = 'Registrar nuevo gasto';
-  const simBox = $('expense-sim-box');
-  if (simBox) simBox.style.display = 'none';
-  $('expense-form-card').classList.remove('is-open');
-  $('expense-form-card').style.display = 'none';
-  $('toggle-expense-form').textContent = '+';
-});
-
-/* Toggle collapsible cards */
-function toggleCollapsibleCard(cardId, btnId) {
-  const card = $(cardId);
-  const btn = $(btnId);
-  if (!card || !btn) return;
-  const isHidden = card.style.display === 'none';
-
-  if (isHidden) {
-    card.style.display = '';
-    requestAnimationFrame(() => card.classList.add('is-open'));
-    btn.textContent = '−';
-    if (cardId === 'expense-form-card') {
-      if (!$('expense-date').value) $('expense-date').valueAsDate = new Date();
-      syncExpenseCategoryOptions();
-    }
-    return;
-  }
-
-  card.classList.remove('is-open');
-  setTimeout(() => { card.style.display = 'none'; }, 220);
-  btn.textContent = '+';
-}
-
-$('toggle-source-form')?.addEventListener('click', () => toggleCollapsibleCard('source-form-card', 'toggle-source-form'));
-$('toggle-expense-form')?.addEventListener('click', () => toggleCollapsibleCard('expense-form-card', 'toggle-expense-form'));
 
 /* ============================================================
    RENDER ALL / PER TAB
