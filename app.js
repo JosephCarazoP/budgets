@@ -15,6 +15,8 @@ window.STATE_ROW_ID = STATE_ROW_ID;
    STATE
    ============================================================ */
 
+const DEFAULT_ENVELOPES = [];
+
 const DEFAULT_CATEGORIES = [
   { name: 'Alimentación', color: '#ef4444' },
   { name: 'Mascotas',     color: '#f59e0b' },
@@ -24,12 +26,40 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const INITIAL = {
-  sources: [], expenses: [], categories: DEFAULT_CATEGORIES,
+  envelopes: [],
+  sources: [],
+  incomes: [],
+  expenses: [],
+  transfers: [],
+  categories: DEFAULT_CATEGORIES,
   assignments: [],
-  theme: 'light', editingSourceId: null, editingExpenseId: null, editingCategoryName: null
+  theme: 'light',
+  editingSourceId: null,
+  editingExpenseId: null,
+  editingCategoryName: null
 };
 
 const state = { ...INITIAL, ...JSON.parse(localStorage.getItem('budget_state') || '{}') };
+
+function ensureEnvelopes() {
+  if (!Array.isArray(state.envelopes)) {
+    state.envelopes = [];
+  }
+  state.envelopes.forEach((env) => {
+    if (!env.id) env.id = uid();
+    if (env.baseAmount === undefined) {
+      env.baseAmount = Number(env.amount ?? env.initialAmount ?? 0);
+    }
+  });
+  if (!Array.isArray(state.incomes)) {
+    state.incomes = Array.isArray(state.sources) ? state.sources : [];
+  }
+  if (!Array.isArray(state.transfers)) {
+    state.transfers = [];
+  }
+}
+ensureEnvelopes();
+
 if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
 if (!Array.isArray(state.assignments)) state.assignments = [];
 
@@ -141,7 +171,7 @@ function setupRealtime() {
       reconcileAssignmentsWithDistributions();
       localStorage.setItem('budget_state', JSON.stringify(state));
       renderOnly();
-      toast('🔄 Sincronizado con otro dispositivo');
+      toast('Sincronizado con otro dispositivo');
     })
     .subscribe();
 }
@@ -434,9 +464,14 @@ function _closeAllCsels() {
 }
 
 function initCustomSelects() {
+  _buildCsel('filter-envelope', {});
   _buildCsel('filter-source', {});
   _buildCsel('filter-category', { isCategory: true });
 
+  $('filter-envelope')?.addEventListener('change', () => {
+    _refreshCsel('filter-envelope');
+    renderExpensesList();
+  });
   $('filter-source')?.addEventListener('change', () => {
     _refreshCsel('filter-source');
     renderExpensesList();
@@ -461,8 +496,18 @@ document.addEventListener('keydown', (e) => {
 });
 
 function renderFilters() {
+  const feEl = $('filter-envelope');
   const fsEl = $('filter-source');
   const fcEl = $('filter-category');
+
+  if (feEl) {
+    const curEnv = feEl.value;
+    feEl.innerHTML = `<option value="">Todos los sobres</option>` +
+      (state.envelopes || []).map((e) => `<option value="${e.id}">${e.name}</option>`).join('');
+    if (curEnv) feEl.value = curEnv;
+    _refreshCsel('filter-envelope');
+  }
+
   if (fsEl) {
     const curSrc = fsEl.value;
     fsEl.innerHTML = `<option value="">Todas las fuentes</option>` +
@@ -470,6 +515,7 @@ function renderFilters() {
     if (curSrc) fsEl.value = curSrc;
     _refreshCsel('filter-source');
   }
+
   if (fcEl) {
     const curCat = fcEl.value;
     const opts = state.categories.map((c) => `<option value="${c.name}">${c.name}</option>`).join('');
@@ -593,13 +639,13 @@ function moveRemainingBudget(sourceId, fromCategory) {
     const amount = parseAmount($('reassign-amount').value);
     const target = $('reassign-target').value;
     if (!Number.isFinite(amount) || amount <= 0 || amount > remaining) {
-      toast(`⚠️ Monto inválido. Máximo disponible: ${money(remaining)}`);
+      toast(`Monto inválido. Máximo disponible: ${money(remaining)}`);
       return;
     }
 
     const moved = reduceAssignments(sourceId, fromCategory, amount);
     if (Math.abs(moved - amount) > 0.009) {
-      toast('⚠️ No se pudo encontrar toda la asignación a mover');
+      toast('No se pudo encontrar toda la asignación a mover');
       rebuildDistributionsFromAssignments();
       renderAll();
       return;
@@ -672,49 +718,767 @@ $('theme-toggle').addEventListener('click', toggleTheme);
 $('theme-toggle-mobile').addEventListener('click', toggleTheme);
 
 /* ============================================================
-   RENDER KPIs
+   ENVELOPE SYSTEM & DOMAIN CALCULATIONS
+   Formula: Saldo = Base + Ingresos + TransfIn - TransfOut - Gastos
    ============================================================ */
 
-function renderKPIs() {
-  const income      = state.sources.reduce((a, b) => a + Number(b.amount), 0);
-  const distributed = state.sources.reduce((a, s) => a + Object.values(s.distribution || {}).reduce((x, y) => x + Number(y || 0), 0), 0);
-  const expenses    = state.expenses.reduce((a, b) => a + Number(b.amount), 0);
-  const available   = income - expenses;
-  const unassigned  = income - distributed;
+function getEnvelopeTotals(envOrId) {
+  const env = typeof envOrId === 'string' ? state.envelopes.find((e) => e.id === envOrId) : envOrId;
+  if (!env) return { base: 0, incomes: 0, transfersIn: 0, transfersOut: 0, spent: 0, available: 0, totalFunds: 0, pctSpent: 0 };
 
-  const kpis = [
-    { label: 'Ingresos totales', value: money(income), sub: `${state.sources.length} fuente(s)`,
-      icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>` },
-    { label: 'Presupuesto asignado', value: money(distributed), sub: `Monto total repartido en categorías · Sin asignar: ${money(unassigned)}`,
-      icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>` },
-    { label: 'Gastos totales', value: money(expenses), sub: `${state.expenses.length} transacción(es)`,
-      icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>` },
-    { label: 'Disponible', value: money(available), sub: income > 0 ? `${Math.round((available/income)*100)}% del ingreso` : '—',
-      icon: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>` }
-  ];
+  const base = Number(env.baseAmount ?? env.initialAmount ?? env.amount ?? 0);
 
-  $('kpis').innerHTML = kpis.map(({ label, value, sub, icon }) => `
-    <div class="kpi-card">
-      <div class="kpi-label">${icon}${label}</div>
-      <div class="kpi-value">${value}</div>
-      <div class="kpi-sub">${sub}</div>
-    </div>`).join('');
+  const allIncomes = [...(state.incomes || [])];
+  if (Array.isArray(state.sources)) {
+    state.sources.forEach(s => {
+      if (!allIncomes.some(i => i.id === s.id)) allIncomes.push(s);
+    });
+  }
+
+  const envIncomes = allIncomes
+    .filter((i) => (i.envelopeId === env.id || i.envelope === env.name) && (i.status === 'recibido' || !i.status))
+    .reduce((sum, i) => sum + Number(i.amount || 0), 0);
+
+  const transfersIn = (state.transfers || [])
+    .filter((t) => t.toEnvelopeId === env.id)
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+  const transfersOut = (state.transfers || [])
+    .filter((t) => t.fromEnvelopeId === env.id)
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+  const spent = (state.expenses || [])
+    .filter((e) => e.envelopeId === env.id || e.envelope === env.name)
+    .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+  const totalFunds = base + envIncomes + transfersIn;
+  const available = totalFunds - transfersOut - spent;
+  const pctSpent = totalFunds > 0 ? Math.min(100, Math.max(0, (spent / totalFunds) * 100)) : 0;
+
+  return { base, incomes: envIncomes, transfersIn, transfersOut, spent, available, totalFunds, pctSpent };
+}
+
+function getEnvelopeIconSVG(iconName, color = 'currentColor', size = 16) {
+  switch (iconName) {
+    case 'lock':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+    case 'compass':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>`;
+    case 'tool':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`;
+    case 'camera':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
+    case 'wallet':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>`;
+    case 'car':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`;
+    case 'heart':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>`;
+    case 'shield':
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`;
+    default:
+      return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>`;
+  }
 }
 
 /* ============================================================
-   RENDER CHARTS
+   PATRIMONIO TOTAL (DISCRETO / CONSULTA BAJO DEMANDA)
+   ============================================================ */
+
+let _showTotalWealth = false;
+
+function renderTotalWealth() {
+  const valEl = $('total-wealth-val');
+  const eyeIcon = $('icon-eye-total');
+  const eyeOffIcon = $('icon-eye-off-total');
+  if (!valEl) return;
+
+  if (_showTotalWealth) {
+    const total = (state.envelopes || []).reduce((acc, env) => acc + getEnvelopeTotals(env).available, 0);
+    valEl.textContent = money(total);
+    if (eyeIcon) eyeIcon.style.display = 'none';
+    if (eyeOffIcon) eyeOffIcon.style.display = '';
+  } else {
+    valEl.textContent = '₡***';
+    if (eyeIcon) eyeIcon.style.display = '';
+    if (eyeOffIcon) eyeOffIcon.style.display = 'none';
+  }
+}
+
+function initTotalWealthToggle() {
+  const btn = $('btn-toggle-total-wealth');
+  if (btn && !btn.dataset.bound) {
+    btn.dataset.bound = 'true';
+    btn.addEventListener('click', () => {
+      _showTotalWealth = !_showTotalWealth;
+      renderTotalWealth();
+    });
+  }
+}
+
+/* ============================================================
+   TARJETAS DE SOBRES (DASHBOARD)
+   ============================================================ */
+
+const _revealedEnvelopes = new Set();
+
+window.toggleEnvelopeMask = function(envId) {
+  if (_revealedEnvelopes.has(envId)) {
+    _revealedEnvelopes.delete(envId);
+  } else {
+    _revealedEnvelopes.add(envId);
+  }
+  renderEnvelopeCards();
+};
+
+window.toggleEnvelopeMenu = function(event, envId) {
+  event.stopPropagation();
+  const dropdown = document.getElementById(`env-menu-${envId}`);
+  const isAlreadyOpen = dropdown?.classList.contains('open');
+  closeAllEnvelopeMenus();
+  if (!isAlreadyOpen && dropdown) {
+    dropdown.classList.add('open');
+  }
+};
+
+function closeAllEnvelopeMenus() {
+  document.querySelectorAll('.envelope-menu-dropdown').forEach((d) => d.classList.remove('open'));
+}
+document.addEventListener('click', closeAllEnvelopeMenus);
+
+function renderEnvelopeCards() {
+  const container = $('envelopes-grid') || $('kpis');
+  if (!container) return;
+
+  if (!state.envelopes || !state.envelopes.length) {
+    container.innerHTML = `
+      <div class="empty-state" style="grid-column: 1 / -1; padding: 2.5rem 1.5rem; text-align: center;">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin: 0 auto 0.75rem; color: var(--text-3); display: block;"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+        <p style="font-weight: 600; font-size: 1rem; margin-bottom: 0.35rem;">No tienes sobres creados aún</p>
+        <span style="display: block; max-width: 420px; margin: 0 auto 1.25rem; font-size: 0.85rem; color: var(--text-2);">Crea tus propios sobres con su nombre y saldo base para comenzar a organizar tu presupuesto de transición.</span>
+        <button type="button" class="btn-primary" onclick="openCreateEnvelopeModal()" style="margin: 0 auto;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Crear primer sobre
+        </button>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = state.envelopes.map((env) => {
+    const t = getEnvelopeTotals(env);
+    const isLocked = !!env.isLocked;
+    const isRevealed = _revealedEnvelopes.has(env.id);
+    const isMasked = isLocked && !isRevealed;
+
+    const displayAmount = isMasked ? '₡***' : money(t.available);
+    const iconSVG = getEnvelopeIconSVG(env.icon || (isLocked ? 'lock' : 'compass'), env.color || '#3b82f6', 16);
+
+    const lockedClass = isLocked ? ' envelope-card--locked' : '';
+    const lockedBadge = isLocked
+      ? `<span class="envelope-badge-locked">
+           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+           Protegido
+         </span>`
+      : '';
+
+    const eyeToggleBtn = isLocked
+      ? `<button type="button" class="btn-eye-toggle" onclick="toggleEnvelopeMask('${env.id}')" title="${isRevealed ? 'Ocultar saldo' : 'Revelar saldo'}" aria-label="Alternar visibilidad">
+           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+             ${isRevealed
+               ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+               : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
+             }
+           </svg>
+         </button>`
+      : '';
+
+    return `
+      <div class="envelope-card${lockedClass}" data-env-id="${env.id}">
+        <div>
+          <div class="envelope-header">
+            <div class="envelope-header-left">
+              <div class="envelope-icon-wrap" style="background:${env.color}18; color:${env.color}">
+                ${iconSVG}
+              </div>
+              <div class="envelope-title-wrap">
+                <span class="envelope-name" title="${env.name}">${env.name}</span>
+                ${lockedBadge}
+              </div>
+            </div>
+            <div class="envelope-menu-wrap">
+              <button type="button" class="envelope-menu-btn" onclick="toggleEnvelopeMenu(event, '${env.id}')" title="Opciones del sobre">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+                </svg>
+              </button>
+              <div class="envelope-menu-dropdown" id="env-menu-${env.id}">
+                <button type="button" class="envelope-menu-item" onclick="openIncomeModal(null, '${env.id}')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Inyectar ingreso
+                </button>
+                <button type="button" class="envelope-menu-item" onclick="openTransferModal('${env.id}')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>
+                  Transferir dinero
+                </button>
+                <button type="button" class="envelope-menu-item" onclick="openEditEnvelopeModal('${env.id}')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  Editar sobre
+                </button>
+                <div class="envelope-menu-divider"></div>
+                <button type="button" class="envelope-menu-item danger" onclick="openDeleteEnvelopeModal('${env.id}')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  Eliminar sobre
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="envelope-balance-section">
+            <div class="envelope-balance-label">
+              <span>Saldo disponible</span>
+              ${eyeToggleBtn}
+            </div>
+            <div class="envelope-balance-row">
+              <span class="envelope-balance-val ${t.available < 0 ? 'over' : ''} ${isMasked ? 'envelope-balance-masked' : ''}">${displayAmount}</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="envelope-progress-wrap" title="${Math.round(t.pctSpent)}% consumido">
+            <div class="envelope-progress-bar">
+              <div class="envelope-progress-fill" style="width:${t.pctSpent}%; background:${t.available < 0 ? 'var(--danger)' : (env.color || 'var(--text)')}"></div>
+            </div>
+            <span class="envelope-progress-pct">${Math.round(t.pctSpent)}%</span>
+          </div>
+
+          <div class="envelope-submetrics">
+            <div class="envelope-metric">
+              <span class="label">Fondo total</span>
+              <span class="val">${isMasked ? '₡***' : money(t.totalFunds)}</span>
+            </div>
+            <div class="envelope-metric" style="text-align:right">
+              <span class="label">Gastado</span>
+              <span class="val spent">-${money(t.spent)}</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+/* ============================================================
+   GESTIÓN MANUAL DE SOBRES (CREAR, EDITAR, TRANSFERIR, ELIMINAR)
+   ============================================================ */
+
+const AVAILABLE_ENVELOPE_ICONS = ['compass', 'lock', 'wallet', 'tool', 'camera', 'car', 'heart', 'shield'];
+
+window.openCreateEnvelopeModal = function() {
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  const PRESET_ENVELOPE_COLORS = ['#10b981', '#6366f1', '#f59e0b', '#ec4899', '#3b82f6', '#06b6d4', '#8b5cf6', '#ef4444'];
+  let selectedColor = PRESET_ENVELOPE_COLORS[Math.floor(Math.random() * PRESET_ENVELOPE_COLORS.length)];
+  let selectedIcon = 'compass';
+
+  content.innerHTML = `
+    <div class="modal-info-content" style="max-width:440px">
+      <div class="modal-info-header">
+        <h3>Nuevo sobre</h3>
+        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <form id="create-env-form" style="display:flex;flex-direction:column;gap:1rem;margin-top:0.5rem">
+        <div class="field">
+          <label>Nombre del sobre</label>
+          <input id="modal-env-name" placeholder="Ej. Pista de Vida, Fondo Vacaciones..." required />
+        </div>
+
+        <div class="field">
+          <label>Fondo base inicial (₡)</label>
+          <div class="amount-input-wrap">
+            <span class="currency-symbol">₡</span>
+            <input id="modal-env-base" type="text" inputmode="decimal" placeholder="0.00" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Icono del sobre</label>
+          <div class="icon-picker-grid" id="create-env-icon-grid">
+            ${AVAILABLE_ENVELOPE_ICONS.map(ic => `
+              <div class="icon-picker-item ${ic === selectedIcon ? 'selected' : ''}" data-icon="${ic}">
+                ${getEnvelopeIconSVG(ic, 'currentColor', 18)}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Color representativo</label>
+          <div class="color-picker-grid" id="env-color-grid">
+            ${PRESET_ENVELOPE_COLORS.map(c => `
+              <div class="color-swatch ${c === selectedColor ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="field" style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.85rem;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <input type="checkbox" id="modal-env-locked" style="width:16px;height:16px;cursor:pointer" />
+          <label for="modal-env-locked" style="cursor:pointer;font-size:0.78rem;font-weight:500;user-select:none;display:flex;align-items:center;gap:0.4rem">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Protección psicológica (ocultar saldo con asteriscos por defecto)
+          </label>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.4rem">
+          <button type="button" class="btn-ghost" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn-primary">Crear sobre</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  attachAmountFormatter($('modal-env-base'));
+  const swatches = content.querySelectorAll('#env-color-grid .color-swatch');
+  swatches.forEach(sw => {
+    sw.addEventListener('click', () => {
+      swatches.forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+      selectedColor = sw.getAttribute('data-color');
+    });
+  });
+
+  const iconItems = content.querySelectorAll('#create-env-icon-grid .icon-picker-item');
+  iconItems.forEach(item => {
+    item.addEventListener('click', () => {
+      iconItems.forEach(i => i.classList.remove('selected'));
+      item.classList.add('selected');
+      selectedIcon = item.getAttribute('data-icon');
+    });
+  });
+
+  const lockCheckbox = $('modal-env-locked');
+  lockCheckbox?.addEventListener('change', () => {
+    if (lockCheckbox.checked && selectedIcon === 'compass') {
+      selectedIcon = 'lock';
+      iconItems.forEach(i => {
+        if (i.getAttribute('data-icon') === 'lock') i.classList.add('selected');
+        else i.classList.remove('selected');
+      });
+    }
+  });
+
+  overlay.style.display = 'flex';
+  $('modal-env-name').focus();
+
+  $('create-env-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const name = $('modal-env-name').value.trim();
+    const baseAmount = parseAmount($('modal-env-base').value);
+    const isLocked = $('modal-env-locked').checked;
+
+    if (!name || isNaN(baseAmount) || baseAmount < 0) {
+      toast('Ingresa un nombre y monto base válidos');
+      return;
+    }
+
+    const newEnv = {
+      id: uid(),
+      name,
+      baseAmount,
+      color: selectedColor,
+      isLocked,
+      icon: selectedIcon
+    };
+
+    state.envelopes.push(newEnv);
+    overlay.style.display = 'none';
+    renderAll();
+    toast(`Sobre "${name}" creado con éxito`);
+  });
+};
+
+window.openEditEnvelopeModal = function(envId) {
+  closeAllEnvelopeMenus();
+  const env = state.envelopes.find(e => e.id === envId);
+  if (!env) return;
+
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  const PRESET_ENVELOPE_COLORS = ['#10b981', '#6366f1', '#f59e0b', '#ec4899', '#3b82f6', '#06b6d4', '#8b5cf6', '#ef4444'];
+  let selectedColor = env.color || '#3b82f6';
+  let selectedIcon = env.icon || (env.isLocked ? 'lock' : 'compass');
+
+  content.innerHTML = `
+    <div class="modal-info-content" style="max-width:440px">
+      <div class="modal-info-header">
+        <h3>Editar sobre</h3>
+        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <form id="edit-env-form" style="display:flex;flex-direction:column;gap:1rem;margin-top:0.5rem">
+        <div class="field">
+          <label>Nombre del sobre</label>
+          <input id="modal-edit-env-name" value="${env.name}" required />
+        </div>
+
+        <div class="field">
+          <label>Fondo base inicial (₡)</label>
+          <div class="amount-input-wrap">
+            <span class="currency-symbol">₡</span>
+            <input id="modal-edit-env-base" type="text" inputmode="decimal" value="${formatAmountString(env.baseAmount)}" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Icono del sobre</label>
+          <div class="icon-picker-grid" id="edit-env-icon-grid">
+            ${AVAILABLE_ENVELOPE_ICONS.map(ic => `
+              <div class="icon-picker-item ${ic === selectedIcon ? 'selected' : ''}" data-icon="${ic}">
+                ${getEnvelopeIconSVG(ic, 'currentColor', 18)}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Color representativo</label>
+          <div class="color-picker-grid" id="edit-env-color-grid">
+            ${PRESET_ENVELOPE_COLORS.map(c => `
+              <div class="color-swatch ${c.toLowerCase() === selectedColor.toLowerCase() ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="field" style="display:flex;align-items:center;gap:0.6rem;padding:0.65rem 0.85rem;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius-sm)">
+          <input type="checkbox" id="modal-edit-env-locked" ${env.isLocked ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer" />
+          <label for="modal-edit-env-locked" style="cursor:pointer;font-size:0.78rem;font-weight:500;user-select:none;display:flex;align-items:center;gap:0.4rem">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Protección psicológica (ocultar saldo con asteriscos por defecto)
+          </label>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.4rem">
+          <button type="button" class="btn-ghost" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn-primary">Guardar cambios</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  attachAmountFormatter($('modal-edit-env-base'));
+  const swatches = content.querySelectorAll('#edit-env-color-grid .color-swatch');
+  swatches.forEach(sw => {
+    sw.addEventListener('click', () => {
+      swatches.forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+      selectedColor = sw.getAttribute('data-color');
+    });
+  });
+
+  const iconItems = content.querySelectorAll('#edit-env-icon-grid .icon-picker-item');
+  iconItems.forEach(item => {
+    item.addEventListener('click', () => {
+      iconItems.forEach(i => i.classList.remove('selected'));
+      item.classList.add('selected');
+      selectedIcon = item.getAttribute('data-icon');
+    });
+  });
+
+  overlay.style.display = 'flex';
+  $('modal-edit-env-name').focus();
+
+  $('edit-env-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const name = $('modal-edit-env-name').value.trim();
+    const baseAmount = parseAmount($('modal-edit-env-base').value);
+    const isLocked = $('modal-edit-env-locked').checked;
+
+    if (!name || isNaN(baseAmount) || baseAmount < 0) {
+      toast('Ingresa datos válidos');
+      return;
+    }
+
+    env.name = name;
+    env.baseAmount = baseAmount;
+    env.color = selectedColor;
+    env.isLocked = isLocked;
+    env.icon = selectedIcon;
+
+    overlay.style.display = 'none';
+    renderAll();
+    toast(`Sobre "${name}" actualizado`);
+  });
+};
+
+window.openTransferModal = function(fromEnvId) {
+  closeAllEnvelopeMenus();
+  const fromEnv = state.envelopes.find(e => e.id === fromEnvId);
+  if (!fromEnv) return;
+
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  const fromTotals = getEnvelopeTotals(fromEnv);
+  const otherEnvelopes = state.envelopes.filter(e => e.id !== fromEnvId);
+
+  if (!otherEnvelopes.length) {
+    toast('Necesitas al menos dos sobres para realizar transferencias');
+    return;
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const toOpts = otherEnvelopes.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+
+  content.innerHTML = `
+    <div class="modal-info-content" style="max-width:440px">
+      <div class="modal-info-header">
+        <h3>Transferir entre sobres</h3>
+        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <form id="transfer-form" style="display:flex;flex-direction:column;gap:1rem;margin-top:0.5rem">
+        <div class="transfer-flow-box">
+          <div class="transfer-env-side">
+            <span class="label">Origen</span>
+            <span class="name">${fromEnv.name}</span>
+            <span class="bal">Disp: ${money(fromTotals.available)}</span>
+          </div>
+          <div class="transfer-arrow-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>
+          <div class="transfer-env-side" style="text-align:right">
+            <span class="label">Destino</span>
+            <select id="modal-transfer-to" style="width:100%;margin-top:2px">
+              ${toOpts}
+            </select>
+          </div>
+        </div>
+
+        ${fromEnv.isLocked ? `
+          <div class="psych-warning-box">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Atención: Estás transfiriendo desde el Ahorro Intocable.
+          </div>
+        ` : ''}
+
+        <div class="field">
+          <label>Monto a transferir (₡)</label>
+          <div class="amount-input-wrap">
+            <span class="currency-symbol">₡</span>
+            <input id="modal-transfer-amount" type="text" inputmode="decimal" placeholder="0.00" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Motivo o concepto (opcional)</label>
+          <input id="modal-transfer-note" placeholder="Ej. Rebalanceo para taller mecánico..." />
+        </div>
+
+        <div id="transfer-preview" class="expense-sim-box" style="display:none"></div>
+
+        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.4rem">
+          <button type="button" class="btn-ghost" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn-primary">Ejecutar transferencia</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  attachAmountFormatter($('modal-transfer-amount'));
+  _buildCsel('modal-transfer-to', {});
+
+  const toSelect = $('modal-transfer-to');
+  const amountInput = $('modal-transfer-amount');
+  const previewBox = $('transfer-preview');
+
+  function updateTransferPreview() {
+    const toEnvId = toSelect.value;
+    const toEnv = state.envelopes.find(e => e.id === toEnvId);
+    const amount = parseAmount(amountInput.value);
+
+    if (!toEnv || !amount || amount <= 0) {
+      previewBox.style.display = 'none';
+      return;
+    }
+
+    const toTotals = getEnvelopeTotals(toEnv);
+    const newFromBal = fromTotals.available - amount;
+    const newToBal = toTotals.available + amount;
+    const isOver = newFromBal < 0;
+
+    previewBox.style.display = 'flex';
+    previewBox.innerHTML = `
+      <div class="sim-row">
+        <span>${fromEnv.name} (Origen):</span>
+        <span>${money(fromTotals.available)} → <b class="${isOver ? 'over' : ''}">${money(newFromBal)}</b></span>
+      </div>
+      <div class="sim-row">
+        <span>${toEnv.name} (Destino):</span>
+        <span>${money(toTotals.available)} → <b style="color:var(--success)">${money(newToBal)}</b></span>
+      </div>
+      ${isOver ? `
+        <div style="font-size:0.75rem;color:var(--danger);margin-top:0.3rem">
+          Excede el saldo disponible del sobre de origen por ${money(Math.abs(newFromBal))}.
+        </div>
+      ` : ''}
+    `;
+  }
+
+  toSelect.addEventListener('change', updateTransferPreview);
+  amountInput.addEventListener('input', updateTransferPreview);
+
+  overlay.style.display = 'flex';
+  amountInput.focus();
+
+  $('transfer-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const toEnvId = toSelect.value;
+    const amount = parseAmount(amountInput.value);
+    const note = $('modal-transfer-note').value.trim();
+
+    if (!toEnvId || !amount || amount <= 0) {
+      toast('Ingresa un monto válido');
+      return;
+    }
+
+    if (amount > fromTotals.available) {
+      if (!confirm(`El monto excede el disponible (${money(fromTotals.available)}). ¿Continuar de todos modos?`)) {
+        return;
+      }
+    }
+
+    if (!Array.isArray(state.transfers)) state.transfers = [];
+
+    const newTransfer = {
+      id: uid(),
+      fromEnvelopeId: fromEnvId,
+      toEnvelopeId: toEnvId,
+      amount,
+      date: todayStr,
+      note: note || `Transferencia de ${fromEnv.name} a ${state.envelopes.find(e => e.id === toEnvId)?.name}`
+    };
+
+    state.transfers.push(newTransfer);
+    overlay.style.display = 'none';
+    renderAll();
+    toast(`Transferido ${money(amount)} con éxito`);
+  });
+};
+
+window.openDeleteEnvelopeModal = function(envId) {
+  closeAllEnvelopeMenus();
+  if (state.envelopes.length <= 1) {
+    toast('No puedes eliminar el único sobre existente');
+    return;
+  }
+
+  const env = state.envelopes.find(e => e.id === envId);
+  if (!env) return;
+
+  const t = getEnvelopeTotals(env);
+  const remaining = t.available;
+  const otherEnvelopes = state.envelopes.filter(e => e.id !== envId);
+
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  const targetOpts = otherEnvelopes.map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+
+  content.innerHTML = `
+    <div class="modal-info-content" style="max-width:440px">
+      <div class="modal-info-header">
+        <h3>Eliminar sobre</h3>
+        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <form id="delete-env-form" style="display:flex;flex-direction:column;gap:1rem;margin-top:0.5rem">
+        <p style="font-size:0.82rem;color:var(--text)">
+          ¿Estás seguro de que deseas eliminar el sobre <b>"${env.name}"</b>?
+        </p>
+
+        ${remaining > 0 ? `
+          <div style="padding:0.75rem;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius-sm)">
+            <p style="font-size:0.78rem;color:var(--text-2);margin-bottom:0.5rem">
+              Este sobre cuenta con un saldo restante de <b>${money(remaining)}</b>. Selecciona a qué sobre deseas reasignar este dinero antes de eliminarlo:
+            </p>
+            <div class="field">
+              <label>Sobre destino de los fondos</label>
+              <select id="modal-delete-reassign-to" required>
+                ${targetOpts}
+              </select>
+            </div>
+          </div>
+        ` : ''}
+
+        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.5rem">
+          <button type="button" class="btn-ghost" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn-danger">Eliminar sobre</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  if (remaining > 0) {
+    _buildCsel('modal-delete-reassign-to', {});
+  }
+
+  overlay.style.display = 'flex';
+
+  $('delete-env-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    if (remaining > 0) {
+      const targetId = $('modal-delete-reassign-to')?.value;
+      const targetEnv = state.envelopes.find(e => e.id === targetId);
+      if (targetEnv) {
+        targetEnv.baseAmount = Number(targetEnv.baseAmount || 0) + remaining;
+      }
+    }
+
+    state.expenses.forEach(e => {
+      if (e.envelopeId === envId) {
+        e.envelopeId = otherEnvelopes[0]?.id || '';
+      }
+    });
+    state.incomes.forEach(i => {
+      if (i.envelopeId === envId) {
+        i.envelopeId = otherEnvelopes[0]?.id || '';
+      }
+    });
+
+    state.envelopes = state.envelopes.filter(e => e.id !== envId);
+    overlay.style.display = 'none';
+    renderAll();
+    toast(`Sobre "${env.name}" eliminado`);
+  });
+};
+
+/* ============================================================
+   RENDER CHARTS (POR SOBRE, SIN TOTAL GLOBAL)
    ============================================================ */
 
 let categoriesChart, balanceChart;
 
 function renderCharts() {
-  const map    = categoryMap();
-  const labels = Object.keys(map).filter((k) => map[k].assigned > 0 || map[k].spent > 0);
-  if (!labels.length) { labels.push(...Object.keys(map).slice(0, 5)); }
+  const envs = state.envelopes || [];
+  const labels = envs.map((e) => e.name);
+  const colors = envs.map((e) => e.color || '#64748b');
 
-  const assignedData = labels.map((l) => map[l].assigned);
-  const spentData    = labels.map((l) => map[l].spent);
-  const colors       = labels.map((l) => map[l].color || '#64748b');
+  const totalFundsData = envs.map((e) => getEnvelopeTotals(e).totalFunds);
+  const spentData = envs.map((e) => getEnvelopeTotals(e).spent);
 
   const isDark = state.theme === 'dark';
   const gridColor  = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
@@ -724,53 +1488,63 @@ function renderCharts() {
   Chart.defaults.font.family = "'Geist', -apple-system, BlinkMacSystemFont, sans-serif";
 
   categoriesChart?.destroy();
-  categoriesChart = new Chart($('chart-categories'), {
-    type: 'doughnut',
-    data: {
-      labels,
-      datasets: [{
-        data: assignedData,
-        backgroundColor: colors,
-        borderWidth: 1.5,
-        borderColor: isDark ? '#08080a' : '#ffffff'
-      }]
-    },
-    options: {
-      cutout: '72%',
-      plugins: {
-        legend: {
-          position: 'bottom',
-          labels: { boxWidth: 8, boxHeight: 8, padding: 12, font: { size: 11 } }
-        },
-        tooltip: { callbacks: { label: (c) => ` ${c.label}: ${money(c.raw)}` } }
-      }
-    }
-  });
-
-  balanceChart?.destroy();
-  balanceChart = new Chart($('chart-balance'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Asignado', data: assignedData, backgroundColor: colors.map((c) => c + 'c0'), borderRadius: 2, borderWidth: 0 },
-        { label: 'Gastado',  data: spentData,    backgroundColor: isDark ? '#f43f5ecc' : '#e11d48cc', borderRadius: 2, borderWidth: 0 }
-      ]
-    },
-    options: {
-      responsive: true,
-      scales: {
-        x: { grid: { color: gridColor }, ticks: { font: { size: 10 } } },
-        y: { grid: { color: gridColor }, ticks: { callback: (v) => `₡${(v/1000).toFixed(0)}k`, font: { size: 10 } } }
+  const catCanvas = $('chart-categories');
+  if (catCanvas) {
+    categoriesChart = new Chart(catCanvas, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: spentData.every(v => v === 0) ? envs.map(() => 1) : spentData,
+          backgroundColor: colors,
+          borderWidth: 1.5,
+          borderColor: isDark ? '#08080a' : '#ffffff'
+        }]
       },
-      plugins: {
-        legend: {
-          position: 'bottom',
-          labels: { boxWidth: 8, boxHeight: 8, padding: 12, font: { size: 11 } }
+      options: {
+        cutout: '72%',
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { boxWidth: 8, boxHeight: 8, padding: 12, font: { size: 11 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: (c) => ` ${c.label}: ${money(spentData[c.dataIndex] || 0)} gastado`
+            }
+          }
         }
       }
-    }
-  });
+    });
+  }
+
+  balanceChart?.destroy();
+  const balCanvas = $('chart-balance');
+  if (balCanvas) {
+    balanceChart = new Chart(balCanvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Fondo total', data: totalFundsData, backgroundColor: colors.map((c) => c + 'c0'), borderRadius: 2, borderWidth: 0 },
+          { label: 'Gastado',  data: spentData,    backgroundColor: isDark ? '#f43f5ecc' : '#e11d48cc', borderRadius: 2, borderWidth: 0 }
+        ]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { grid: { color: gridColor }, ticks: { font: { size: 10 } } },
+          y: { grid: { color: gridColor }, ticks: { callback: (v) => `₡${(v/1000).toFixed(0)}k`, font: { size: 10 } } }
+        },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { boxWidth: 8, boxHeight: 8, padding: 12, font: { size: 11 } }
+          }
+        }
+      }
+    });
+  }
 }
 
 /* ============================================================
@@ -779,24 +1553,28 @@ function renderCharts() {
 
 function renderRecentExpenses() {
   const recent = [...state.expenses].sort(compareByDateDesc).slice(0, 5);
-  const el     = $('recent-expenses-list');
+  const el = $('recent-expenses-list');
+  if (!el) return;
 
   if (!recent.length) {
     el.innerHTML = `<div class="empty-state">
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
-      <p>Sin gastos registrados</p><span>Añade tu primer gasto en la sección Gastos</span></div>`;
+      <p>Sin gastos registrados</p><span>Añade tu primer gasto con el botón de registrar gasto</span></div>`;
     return;
   }
 
   el.innerHTML = recent.map((e) => {
-    const src = state.sources.find((s) => s.id === e.sourceId);
+    const env = state.envelopes.find((x) => x.id === e.envelopeId || x.name === e.envelope);
     const cat = state.categories.find((c) => c.name === e.category);
+    const envColor = env?.color || 'var(--text-3)';
     return `<div class="recent-row">
       <div class="recent-left">
         <div class="recent-desc">${e.desc}</div>
         <div class="recent-meta">${fmt(e.date)} · <span style="display:inline-flex;align-items:center;gap:.25rem">
+          <span style="width:7px;height:7px;border-radius:50%;background:${envColor};display:inline-block"></span>
+          ${env?.name || 'Sobre'}</span> · <span style="display:inline-flex;align-items:center;gap:.25rem">
           <span style="width:7px;height:7px;border-radius:50%;background:${cat?.color || '#888'};display:inline-block"></span>
-          ${e.category}</span> · ${src?.name || '—'}</div>
+          ${e.category || 'General'}</span></div>
       </div>
       <div class="recent-amount">-${money(e.amount)}</div>
     </div>`;
@@ -804,23 +1582,33 @@ function renderRecentExpenses() {
 }
 
 /* ============================================================
-   RENDER SOURCES (COMPACT CARDS WITH PRESUPUESTO, ASIGNADO & GASTADO)
+   RENDER INGRESOS Y ENTRADAS DE DINERO
    ============================================================ */
 
 function renderSources() {
   const el = $('sources');
-  if (!state.sources.length) {
+  if (!el) return;
+
+  const allIncomes = [...(state.incomes || [])];
+  if (Array.isArray(state.sources)) {
+    state.sources.forEach(s => {
+      if (!allIncomes.some(i => i.id === s.id)) allIncomes.push(s);
+    });
+  }
+
+  if (!allIncomes.length) {
     el.innerHTML = `<div class="empty-state" style="padding:2rem">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-      <p>Sin fuentes de ingreso</p><span>Crea tu primera fuente con el botón de arriba</span></div>`;
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <p>Sin ingresos registrados</p><span>Inyecta tu primer ingreso asignándolo a un sobre con el botón de nuevo ingreso</span></div>`;
     return;
   }
 
-  el.innerHTML = state.sources.map((s) => {
-    const t = sourceTotals(s);
-    const pctSpent = t.assigned > 0 ? Math.min(100, (t.spent / t.assigned) * 100) : 0;
+  el.innerHTML = allIncomes.sort(compareByDateDesc).map((s) => {
+    const env = state.envelopes.find((e) => e.id === s.envelopeId || e.name === s.envelope);
+    const envColor = env?.color || 'var(--text-3)';
+    const envName = env?.name || 'Sin sobre asignado';
 
-    const badge = s.status === 'recibido'
+    const badge = s.status === 'recibido' || !s.status
       ? `<span class="badge badge-received">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
           Recibido
@@ -830,95 +1618,97 @@ function renderSources() {
           Pendiente
         </span>`;
 
-    const catCount = Object.keys(s.distribution || {}).length;
-    const catText = catCount === 1 ? '1 categoría' : `${catCount} categorías`;
-
     return `<div class="source-card">
       <div class="source-header">
         <div class="source-title-wrap">
           <span class="source-name">${s.name}</span>
-          <span class="badge badge-cats">${catText}</span>
+          <span class="exp-tag" style="margin-left:0.5rem">
+            <span class="exp-tag-dot" style="background:${envColor}"></span>
+            ${envName}
+          </span>
         </div>
         <div class="source-meta">
           ${badge}
           <div class="source-actions">
-            <button type="button" class="btn-icon-info" title="Ver desglose y estadísticas completas" onclick="openSourceInfoModal('${s.id}')">i</button>
-            <button type="button" class="btn-secondary btn-sm" onclick="openSourceAssignmentsModal('${s.id}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              Asignaciones
-            </button>
-            <button type="button" class="btn-secondary btn-sm" onclick="openSourceModal('${s.id}')">
+            <button type="button" class="btn-secondary btn-sm" onclick="openIncomeModal('${s.id}')">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               Editar
             </button>
-            <button type="button" class="btn-danger btn-sm" onclick="deleteSource('${s.id}')" title="Eliminar fuente">
+            <button type="button" class="btn-danger btn-sm" onclick="deleteIncome('${s.id}')" title="Eliminar ingreso">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Compact exterior body: Presupuesto (Total), Asignado & Gastado -->
       <div class="source-compact-body">
         <div class="source-compact-metrics">
           <div class="compact-metric">
-            <span class="label">Presupuesto:</span>
-            <span class="val total">${money(s.amount)}</span>
+            <span class="label">Monto inyectado:</span>
+            <span class="val total" style="color:var(--success)">+${money(s.amount)}</span>
           </div>
           <div class="compact-metric">
-            <span class="label">Asignado:</span>
-            <span class="val">${money(t.assigned)}</span>
+            <span class="label">Sobre destino:</span>
+            <span class="val">${envName}</span>
           </div>
           <div class="compact-metric">
-            <span class="label">Gastado:</span>
-            <span class="val spent">${money(t.spent)}</span>
+            <span class="label">Fecha:</span>
+            <span class="val">${fmt(s.date)}</span>
           </div>
-        </div>
-        <div class="source-compact-bar-wrap" title="${Math.round(pctSpent)}% de lo asignado gastado">
-          <div class="progress-bar">
-            <div class="progress-fill" style="width:${pctSpent}%; background:${pctSpent >= 90 ? 'var(--danger)' : 'var(--text)'}"></div>
-          </div>
-          <span class="source-compact-pct">${Math.round(pctSpent)}%</span>
         </div>
       </div>
     </div>`;
   }).join('');
 }
 
+window.deleteIncome = function(id) {
+  if (!confirm('¿Eliminar este registro de ingreso?')) return;
+  state.incomes = (state.incomes || []).filter((x) => x.id !== id);
+  state.sources = (state.sources || []).filter((x) => x.id !== id);
+  renderAll();
+  toast('Ingreso eliminado');
+};
+
 /* ============================================================
-   SOURCE MODAL (NUEVA / EDITAR FUENTE DE INGRESO)
+   INCOME MODAL (NUEVO / EDITAR INGRESO ASIGNADO A SOBRE)
    ============================================================ */
 
-window.openSourceModal = function(sourceId = null) {
-  const isEdit = !!sourceId;
-  const s = isEdit ? state.sources.find((x) => x.id === sourceId) : null;
+window.openIncomeModal = window.openSourceModal = function(incomeId = null, preselectedEnvId = null) {
+  const isEdit = !!incomeId;
+  const s = isEdit ? (state.incomes || state.sources || []).find((x) => x.id === incomeId) : null;
+  const targetEnvId = s ? (s.envelopeId || s.envelope) : (preselectedEnvId || state.envelopes[0]?.id || '');
 
   const overlay = $('modal-overlay');
   const content = $('modal-content');
   if (!overlay || !content) return;
 
   const todayStr = new Date().toISOString().slice(0, 10);
+  const envOpts = state.envelopes.map((e) => {
+    return `<option value="${e.id}" ${e.id === targetEnvId ? 'selected' : ''}>${e.isLocked ? '[Protegido] ' : ''}${e.name}</option>`;
+  }).join('');
 
   content.innerHTML = `
     <div class="modal-info-content" style="max-width:440px">
       <div class="modal-info-header">
-        <h3>${isEdit ? 'Editar fuente de ingreso' : 'Nueva fuente de ingreso'}</h3>
-        <button type="button" class="btn-ghost btn-sm" id="source-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+        <h3>${isEdit ? 'Editar ingreso' : 'Nuevo ingreso asignado'}</h3>
+        <button type="button" class="btn-ghost btn-sm" id="source-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
 
       <form id="source-modal-form" style="display:flex;flex-direction:column;gap:0.95rem;margin-top:0.5rem">
         <div class="field">
           <label class="field-label-step">
             <span class="step-num">1</span>
-            NOMBRE DE LA FUENTE
+            CONCEPTO DEL INGRESO
           </label>
-          <input id="modal-src-name" placeholder="Ej. Salario, Freelance, Beca..." value="${s ? s.name : ''}" required />
+          <input id="modal-src-name" placeholder="Ej. Beca INA, Salario, Trabajo extra..." value="${s ? s.name : ''}" required />
         </div>
 
         <div class="field">
           <label class="field-label-step">
             <span class="step-num">2</span>
-            MONTO TOTAL DEL INGRESO (₡)
+            MONTO DEL INGRESO (₡)
           </label>
           <div class="amount-input-wrap">
             <span class="currency-symbol">₡</span>
@@ -926,48 +1716,52 @@ window.openSourceModal = function(sourceId = null) {
           </div>
         </div>
 
+        <div class="field">
+          <label class="field-label-step">
+            <span class="step-num">3</span>
+            SOBRE DESTINO (OBLIGATORIO)
+          </label>
+          <select id="modal-src-envelope" required>
+            ${envOpts}
+          </select>
+        </div>
+
         <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap:0.75rem; padding:0">
           <div class="field">
             <label class="field-label-step">
-              <span class="step-num">3</span>
-              FECHA ESPERADA
+              <span class="step-num">4</span>
+              FECHA
             </label>
             <input id="modal-src-date" type="date" value="${s ? s.date : todayStr}" required />
           </div>
 
           <div class="field">
             <label class="field-label-step">
-              <span class="step-num">4</span>
+              <span class="step-num">5</span>
               ESTADO
             </label>
             <select id="modal-src-status">
+              <option value="recibido" ${!s || s.status === 'recibido' ? 'selected' : ''}>Recibido</option>
               <option value="pendiente" ${s && s.status === 'pendiente' ? 'selected' : ''}>Pendiente</option>
-              <option value="recibido" ${s && s.status === 'recibido' ? 'selected' : ''}>Recibido</option>
             </select>
           </div>
         </div>
 
         <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.5rem">
           <button type="button" class="btn-ghost" id="source-modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
-          <button type="submit" class="btn-primary">${isEdit ? 'Actualizar fuente' : 'Guardar fuente'}</button>
+          <button type="submit" class="btn-primary">${isEdit ? 'Actualizar ingreso' : 'Inyectar al sobre'}</button>
         </div>
       </form>
     </div>
   `;
 
+  _buildCsel('modal-src-envelope', {});
   _buildCsel('modal-src-status', { isStatus: true });
-
   attachAmountFormatter($('modal-src-amount'));
+
   const nameInput = $('modal-src-name');
   overlay.style.display = 'flex';
   nameInput.focus();
-
-  // Mobile Keyboard Focus Scroll Handler
-  content.querySelectorAll('input, select').forEach((inp) => {
-    inp.addEventListener('focus', () => {
-      setTimeout(() => inp.scrollIntoView({ block: 'center', behavior: 'smooth' }), 200);
-    });
-  });
 
   $('source-modal-close')?.addEventListener('click', () => { overlay.style.display = 'none'; });
   $('source-modal-cancel')?.addEventListener('click', () => { overlay.style.display = 'none'; });
@@ -975,25 +1769,33 @@ window.openSourceModal = function(sourceId = null) {
 
   $('source-modal-form')?.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const payload = {
-      name: $('modal-src-name').value.trim(),
-      amount: parseAmount($('modal-src-amount').value),
-      date: $('modal-src-date').value,
-      status: $('modal-src-status').value
-    };
+    const name = $('modal-src-name').value.trim();
+    const amount = parseAmount($('modal-src-amount').value);
+    const envelopeId = $('modal-src-envelope').value;
+    const date = $('modal-src-date').value || todayStr;
+    const status = $('modal-src-status').value;
 
-    if (!payload.name || !payload.amount || payload.amount <= 0) {
-      toast('Ingresa un nombre y monto válido');
+    if (!name || !amount || amount <= 0 || !envelopeId) {
+      toast('Ingresa datos válidos y selecciona un sobre');
       return;
     }
 
+    if (!Array.isArray(state.incomes)) state.incomes = [];
+    if (!Array.isArray(state.sources)) state.sources = [];
+
+    const targetEnv = state.envelopes.find((e) => e.id === envelopeId);
+
     if (isEdit) {
-      const src = state.sources.find((x) => x.id === sourceId);
-      if (src) Object.assign(src, payload);
-      toast(`Fuente "${payload.name}" actualizada`);
+      const existing = state.incomes.find((x) => x.id === incomeId) || state.sources.find((x) => x.id === incomeId);
+      if (existing) {
+        Object.assign(existing, { name, amount, envelopeId, date, status });
+      }
+      toast(`Ingreso actualizado en ${targetEnv?.name || 'sobre'}`);
     } else {
-      state.sources.push({ id: uid(), ...payload, distribution: {} });
-      toast(`Fuente "${payload.name}" creada`);
+      const newInc = { id: uid(), name, amount, envelopeId, date, status };
+      state.incomes.push(newInc);
+      state.sources.push(newInc);
+      toast(`Inyectado ${money(amount)} a ${targetEnv?.name || 'sobre'}`);
     }
 
     overlay.style.display = 'none';
@@ -1040,7 +1842,9 @@ window.openSourceInfoModal = function(sourceId) {
             Estado: <b>${s.status === 'recibido' ? 'Recibido' : 'Pendiente'}</b> · Fecha esperada: <b>${fmt(s.date)}</b>
           </p>
         </div>
-        <button type="button" class="btn-ghost btn-sm" id="modal-info-close" onclick="document.getElementById('modal-overlay').style.display='none'" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+        <button type="button" class="btn-ghost btn-sm" id="modal-info-close" onclick="document.getElementById('modal-overlay').style.display='none'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
 
       <div class="info-bars-container">
@@ -1159,7 +1963,9 @@ window.openSourceAssignmentsModal = function(sourceId) {
             <h3>Asignaciones: ${freshSource.name}</h3>
             <p class="muted" style="font-size:0.75rem;margin-top:0.15rem">Distribuye el presupuesto disponible en tus categorías</p>
           </div>
-          <button type="button" class="btn-ghost btn-sm" id="assignments-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+          <button type="button" class="btn-ghost btn-sm" id="assignments-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
         </div>
 
         <div class="assignments-balance-card">
@@ -1196,7 +2002,9 @@ window.openSourceAssignmentsModal = function(sourceId) {
                 <div class="assignment-input-inline">
                   <input type="text" inputmode="decimal" value="${formatAmountString(a.amount)}" id="input-asg-${a.id}" data-asg-id="${a.id}" />
                   <button type="button" class="btn-secondary btn-sm" onclick="saveAssignmentInline('${a.id}', '${sourceId}')" title="Guardar cambios">Guardar</button>
-                  <button type="button" class="btn-danger btn-sm" onclick="removeAssignmentFromModal('${a.id}', '${sourceId}')" title="Eliminar asignación">✕</button>
+                  <button type="button" class="btn-danger btn-sm" onclick="removeAssignmentFromModal('${a.id}', '${sourceId}')" title="Eliminar asignación">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
                 </div>
               </div>`;
             }).join('')}
@@ -1327,7 +2135,9 @@ window.openCategoryModal = function(catName = null) {
     <div class="modal-info-content" style="max-width:440px">
       <div class="modal-info-header">
         <h3>${isEdit ? 'Editar categoría' : 'Nueva categoría'}</h3>
-        <button type="button" class="btn-ghost btn-sm" id="cat-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+        <button type="button" class="btn-ghost btn-sm" id="cat-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
 
       <form id="cat-modal-form" style="display:flex;flex-direction:column;gap:1rem;margin-top:0.5rem">
@@ -1549,6 +2359,12 @@ window.deleteCategory = function(name) {
    ============================================================ */
 
 window.openExpenseModal = function(expenseId = null) {
+  if (!state.envelopes || !state.envelopes.length) {
+    toast('Crea al menos un sobre antes de registrar gastos');
+    openCreateEnvelopeModal();
+    return;
+  }
+
   const isEdit = !!expenseId;
   const ex = isEdit ? state.expenses.find((x) => x.id === expenseId) : null;
 
@@ -1557,45 +2373,52 @@ window.openExpenseModal = function(expenseId = null) {
   if (!overlay || !content) return;
 
   const todayStr = new Date().toISOString().slice(0, 10);
-  const srcOpts = state.sources.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
+  const initialEnvId = ex ? (ex.envelopeId || ex.sourceId || state.envelopes[0].id) : state.envelopes[0].id;
+
+  const envOpts = state.envelopes.map((env) => {
+    const t = getEnvelopeTotals(env);
+    return `<option value="${env.id}" ${env.id === initialEnvId ? 'selected' : ''}>${env.isLocked ? '[Protegido] ' : ''}${env.name} (Disp: ${money(t.available)})</option>`;
+  }).join('');
+
+  const catOpts = state.categories.map((c) => {
+    return `<option value="${c.name}" ${ex && ex.category === c.name ? 'selected' : ''}>${c.name}</option>`;
+  }).join('');
 
   content.innerHTML = `
     <div class="modal-info-content" style="max-width:460px">
       <div class="modal-info-header">
         <h3>${isEdit ? 'Editar gasto' : 'Registrar nuevo gasto'}</h3>
-        <button type="button" class="btn-ghost btn-sm" id="expense-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'" style="font-size:1.1rem;padding:0.2rem 0.6rem">✕</button>
+        <button type="button" class="btn-ghost btn-sm" id="expense-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
 
       <form id="expense-modal-form" class="expense-smart-form" style="padding:0.5rem 0;display:flex;flex-direction:column;gap:0.9rem">
-        <!-- Step 1: SELECCIONA LA FUENTE DE LA QUE GASTARÁS DINERO -->
+        <!-- Step 1: SOBRE DEL QUE SE DESCONTARÁ EL DINERO -->
         <div class="field">
           <label class="field-label-step">
             <span class="step-num">1</span>
-            SELECCIONA LA FUENTE DE LA QUE GASTARÁS DINERO
+            SELECCIONA EL SOBRE DEL QUE SE DESCONTARÁ EL DINERO
           </label>
-          <select id="modal-exp-source" required>${srcOpts}</select>
+          <select id="modal-exp-envelope" required>${envOpts}</select>
         </div>
 
-        <!-- Step 2: SELECCIONA LA CATEGORÍA DEL GASTO -->
+        <!-- Psychological warning if locked -->
+        <div id="modal-exp-locked-warning" class="psych-warning-box" style="display:none">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span>Atención: Este sobre cuenta con protección psicológica. Asegúrate de que este gasto sea indispensable.</span>
+        </div>
+
+        <!-- Step 2: CATEGORÍA DEL GASTO -->
         <div class="field">
           <label class="field-label-step">
             <span class="step-num">2</span>
-            SELECCIONA LA CATEGORÍA DEL GASTO
+            CATEGORÍA DEL GASTO
           </label>
-          <select id="modal-exp-category" required></select>
+          <select id="modal-exp-category" required>${catOpts}</select>
         </div>
 
-        <!-- Alert if source has no categories -->
-        <div id="modal-exp-no-cat-alert" class="expense-no-cat-alert" style="display:none">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <div>
-            <b>Esta fuente no tiene categorías asignadas</b>
-            <p>Primero asigna presupuesto a una categoría en esta fuente.</p>
-          </div>
-          <button type="button" class="btn-secondary btn-sm" id="modal-exp-goto-asg">Asignar ahora →</button>
-        </div>
-
-        <!-- Step 3: INGRESA CUÁNTO GASTASTE Y FECHA DEL GASTO -->
+        <!-- Step 3: MONTO Y FECHA -->
         <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap:0.75rem; padding:0">
           <div class="field">
             <label class="field-label-step">
@@ -1621,104 +2444,61 @@ window.openExpenseModal = function(expenseId = null) {
         <div class="field">
           <label class="field-label-step">
             <span class="step-num">5</span>
-            CONCEPTO
+            CONCEPTO O DESCRIPCIÓN
           </label>
-          <input id="modal-exp-desc" placeholder="Ej. Supermercado, gasolina, almuerzo..." value="${ex ? ex.desc : ''}" required />
+          <input id="modal-exp-desc" placeholder="Ej. Taller mecánico, compras de comida, repuesto..." value="${ex ? ex.desc : ''}" required />
         </div>
 
-        <!-- Live Simulation / Balance preview -->
+        <!-- Live Simulation Box -->
         <div id="modal-exp-sim-box" class="expense-sim-box" style="display:none"></div>
 
         <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.4rem">
           <button type="button" class="btn-ghost" id="expense-modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
-          <button type="submit" class="btn-primary">${isEdit ? 'Actualizar gasto' : 'Guardar gasto'}</button>
+          <button type="submit" class="btn-primary">${isEdit ? 'Actualizar gasto' : 'Registrar gasto'}</button>
         </div>
       </form>
     </div>
   `;
 
-  _buildCsel('modal-exp-source', {});
+  _buildCsel('modal-exp-envelope', {});
+  _buildCsel('modal-exp-category', { isCategory: true });
 
-  const srcSelect = $('modal-exp-source');
+  const envSelect = $('modal-exp-envelope');
   const catSelect = $('modal-exp-category');
-  const alertNoCat = $('modal-exp-no-cat-alert');
+  const lockedWarning = $('modal-exp-locked-warning');
   const simBox = $('modal-exp-sim-box');
   const amountInput = $('modal-exp-amount');
 
-  if (ex) {
-    srcSelect.value = ex.sourceId;
-    _refreshCsel('modal-exp-source');
-  }
-
-  function syncModalCatOptions() {
-    const sourceId = srcSelect.value;
-    if (!sourceId) {
-      catSelect.innerHTML = '<option value="">Primero elige una fuente</option>';
-      _refreshCsel('modal-exp-category');
-      alertNoCat.style.display = 'none';
-      simBox.style.display = 'none';
-      return;
-    }
-    const source = state.sources.find((s) => s.id === sourceId);
-    if (!source) return;
-
-    const assignedCats = Object.entries(source.distribution || {}).filter(([_, amt]) => amt > 0);
-
-    if (assignedCats.length === 0) {
-      catSelect.innerHTML = '<option value="">(Sin categorías asignadas)</option>';
-      _refreshCsel('modal-exp-category');
-      alertNoCat.style.display = 'flex';
-      const gotoBtn = $('modal-exp-goto-asg');
-      if (gotoBtn) {
-        gotoBtn.onclick = () => {
-          overlay.style.display = 'none';
-          openSourceAssignmentsModal(sourceId);
-        };
-      }
-      simBox.style.display = 'none';
+  function updateModalSimulation() {
+    const envId = envSelect.value;
+    const env = state.envelopes.find((e) => e.id === envId);
+    if (!env) {
+      if (lockedWarning) lockedWarning.style.display = 'none';
+      if (simBox) simBox.style.display = 'none';
       return;
     }
 
-    alertNoCat.style.display = 'none';
-
-    catSelect.innerHTML = assignedCats.map(([catName, assignedAmt]) => {
-      const spent = state.expenses
-        .filter((e) => e.sourceId === sourceId && e.category === catName && (!isEdit || e.id !== expenseId))
-        .reduce((a, b) => a + Number(b.amount), 0);
-      const available = assignedAmt - spent;
-      return `<option value="${catName}">${catName} (Disp: ${money(available)})</option>`;
-    }).join('');
-
-    _buildCsel('modal-exp-category', { isCategory: true });
-    if (ex && ex.sourceId === sourceId) {
-      catSelect.value = ex.category;
-      _refreshCsel('modal-exp-category');
+    if (lockedWarning) {
+      lockedWarning.style.display = env.isLocked ? 'flex' : 'none';
     }
-    updateModalSim();
-  }
 
-  function updateModalSim() {
-    const sourceId = srcSelect.value;
-    const category = catSelect.value;
     const amount = parseAmount(amountInput.value || 0);
-    if (!sourceId || !category) { simBox.style.display = 'none'; return; }
-
-    const source = state.sources.find((s) => s.id === sourceId);
-    if (!source || !source.distribution || !source.distribution[category]) { simBox.style.display = 'none'; return; }
-
-    const assigned = Number(source.distribution[category]);
-    const spent = state.expenses
-      .filter((e) => e.sourceId === sourceId && e.category === category && (!isEdit || e.id !== expenseId))
-      .reduce((a, b) => a + Number(b.amount), 0);
-    const currentAvailable = assigned - spent;
+    const totals = getEnvelopeTotals(env);
+    const existingAmount = (isEdit && ex && (ex.envelopeId === envId || ex.sourceId === envId)) ? Number(ex.amount || 0) : 0;
+    const currentAvailable = totals.available + existingAmount;
     const newAvailable = currentAvailable - amount;
     const isOver = newAvailable < 0;
+
+    if (!amount || amount <= 0) {
+      simBox.style.display = 'none';
+      return;
+    }
 
     simBox.style.display = 'flex';
     simBox.innerHTML = `
       <div class="sim-row">
-        <span style="color:var(--text-2)">Presupuesto de <b>${category}</b> en esta fuente</span>
-        <span>Asignado: <b>${money(assigned)}</b></span>
+        <span style="color:var(--text-2)">Saldo disponible en <b>${env.name}</b></span>
+        <span>${money(currentAvailable)}</span>
       </div>
       <div class="sim-row">
         <span style="font-weight:500;color:var(--text)">Balance resultante:</span>
@@ -1731,24 +2511,24 @@ window.openExpenseModal = function(expenseId = null) {
       ${isOver ? `
         <div style="font-size:0.75rem;color:var(--danger);font-weight:500;margin-top:0.25rem;display:flex;align-items:center;gap:0.35rem">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Excede el presupuesto disponible de la categoría por ${money(Math.abs(newAvailable))}.
+          Excede el saldo disponible del sobre por ${money(Math.abs(newAvailable))}.
         </div>
       ` : ''}
     `;
   }
 
-  syncModalCatOptions();
+  envSelect.addEventListener('change', () => {
+    _refreshCsel('modal-exp-envelope');
+    updateModalSimulation();
+  });
+  amountInput.addEventListener('input', updateModalSimulation);
 
-  srcSelect.addEventListener('change', syncModalCatOptions);
-  catSelect.addEventListener('change', updateModalSim);
-  amountInput.addEventListener('input', updateModalSim);
-
+  updateModalSimulation();
   attachAmountFormatter(amountInput);
 
   overlay.style.display = 'flex';
   amountInput.focus();
 
-  // Scroll focus listener for mobile keyboard safety
   content.querySelectorAll('input, select').forEach((inp) => {
     inp.addEventListener('focus', () => {
       setTimeout(() => inp.scrollIntoView({ block: 'center', behavior: 'smooth' }), 200);
@@ -1761,36 +2541,59 @@ window.openExpenseModal = function(expenseId = null) {
 
   $('expense-modal-form')?.addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const sourceId = srcSelect.value;
+    const envId = envSelect.value;
     const category = catSelect.value;
     const amount = parseAmount(amountInput.value);
     const date = $('modal-exp-date').value || todayStr;
     const desc = $('modal-exp-desc').value.trim();
 
-    if (!sourceId || !category || !amount || amount <= 0) {
+    if (!envId || !category || !amount || amount <= 0) {
       toast('Ingresa datos válidos para el gasto');
       return;
     }
 
-    const source = state.sources.find((s) => s.id === sourceId);
-    const assigned = Number(source?.distribution?.[category] || 0);
-    const spent = state.expenses
-      .filter((x) => x.sourceId === sourceId && x.category === category && (!isEdit || x.id !== expenseId))
-      .reduce((a, b) => a + Number(b.amount), 0);
+    const env = state.envelopes.find((e) => e.id === envId);
+    if (!env) {
+      toast('Selecciona un sobre válido');
+      return;
+    }
 
-    if (spent + amount > assigned) {
-      if (!confirm(`Este gasto excede el presupuesto disponible (${money(assigned - spent)}). ¿Deseas registrarlo de todos modos?`)) {
+    const totals = getEnvelopeTotals(env);
+    const existingAmount = (isEdit && ex && (ex.envelopeId === envId || ex.sourceId === envId)) ? Number(ex.amount || 0) : 0;
+    const currentAvailable = totals.available + existingAmount;
+
+    if (amount > currentAvailable) {
+      if (!confirm(`Este gasto excede el saldo disponible en "${env.name}" (${money(currentAvailable)}). ¿Deseas registrarlo de todos modos?`)) {
         return;
       }
     }
 
     if (isEdit) {
       const existingExp = state.expenses.find((x) => x.id === expenseId);
-      if (existingExp) Object.assign(existingExp, { sourceId, category, amount, desc, date });
+      if (existingExp) {
+        Object.assign(existingExp, {
+          envelopeId: envId,
+          envelope: env.name,
+          sourceId: envId,
+          category,
+          amount,
+          desc,
+          date
+        });
+      }
       toast(`Gasto de ${money(amount)} actualizado`);
     } else {
-      state.expenses.push({ id: uid(), sourceId, category, amount, desc, date });
-      toast(`Gasto de ${money(amount)} guardado`);
+      state.expenses.push({
+        id: uid(),
+        envelopeId: envId,
+        envelope: env.name,
+        sourceId: envId,
+        category,
+        amount,
+        desc,
+        date
+      });
+      toast(`Gasto de ${money(amount)} descontado de ${env.name}`);
     }
 
     overlay.style.display = 'none';
@@ -1803,11 +2606,13 @@ window.openExpenseModal = function(expenseId = null) {
    ============================================================ */
 
 function renderExpensesList() {
-  const filterSrc = $('filter-source')?.value;
+  const filterEnv = $('filter-envelope')?.value || $('filter-source')?.value;
   const filterCat = $('filter-category')?.value;
 
   let list = [...state.expenses].sort(compareByDateDesc);
-  if (filterSrc) list = list.filter((e) => e.sourceId === filterSrc);
+  if (filterEnv) {
+    list = list.filter((e) => e.envelopeId === filterEnv || e.envelope === filterEnv || e.sourceId === filterEnv);
+  }
   if (filterCat) list = list.filter((e) => e.category === filterCat);
 
   const el = $('expenses-list');
@@ -1816,28 +2621,31 @@ function renderExpensesList() {
   if (!list.length) {
     el.innerHTML = `<div class="empty-state">
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
-      <p>Sin gastos</p><span>Ajusta los filtros o registra un nuevo gasto</span></div>`;
+      <p>Sin gastos registrados</p><span>Ajusta los filtros o registra un nuevo gasto</span></div>`;
     return;
   }
 
   el.innerHTML = `
     <div class="expense-table-header">
-      <span>Descripción</span><span>Categoría</span><span>Fuente</span><span>Monto</span><span>Fecha</span><span>Acciones</span>
+      <span>Descripción</span><span>Categoría</span><span>Sobre</span><span>Monto</span><span>Fecha</span><span>Acciones</span>
     </div>` +
     list.map((e) => {
-      const src = state.sources.find((s) => s.id === e.sourceId);
+      const env = (state.envelopes || []).find((x) => x.id === e.envelopeId || x.name === e.envelope) || state.sources.find((s) => s.id === e.sourceId);
       const cat = state.categories.find((c) => c.name === e.category);
+      const envColor = env?.color || '#888';
+      const envName = env?.name || '—';
+
       return `<div class="expense-row">
         <div class="exp-col-desc">
           <div class="exp-desc">${e.desc}</div>
           <div class="exp-meta-inline">
             <span class="exp-tag"><span class="exp-tag-dot" style="background:${cat?.color || '#888'}"></span>${e.category}</span>
-            <span class="exp-tag">${src?.name || '—'}</span>
+            <span class="exp-tag"><span class="exp-tag-dot" style="background:${envColor}"></span>${envName}</span>
             <span class="exp-date">${fmt(e.date)}</span>
           </div>
         </div>
         <div class="exp-col-cat"><span class="exp-tag"><span class="exp-tag-dot" style="background:${cat?.color || '#888'}"></span>${e.category}</span></div>
-        <div class="exp-col-src"><span class="exp-tag">${src?.name || '—'}</span></div>
+        <div class="exp-col-src"><span class="exp-tag"><span class="exp-tag-dot" style="background:${envColor}"></span>${envName}</span></div>
         <div class="exp-col-amt"><span class="exp-amount">-${money(e.amount)}</span></div>
         <div class="exp-col-date"><span class="exp-date">${fmt(e.date)}</span></div>
         <div class="exp-col-actions expense-actions">
@@ -1868,7 +2676,8 @@ window.deleteExpense = function(id) {
 function renderTab(tab) {
   switch (tab) {
     case 'dashboard':
-      renderKPIs();
+      renderTotalWealth();
+      renderEnvelopeCards();
       renderCharts();
       renderCatSummary();
       renderRecentExpenses();
@@ -2040,61 +2849,69 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* ============================================================
-   RENDER CATEGORY SUMMARY (dashboard)
+   RENDER ENVELOPE SUMMARY (dashboard)
    ============================================================ */
 
 function renderCatSummary() {
-  const map     = categoryMap();
-  const entries = Object.entries(map).filter(([, d]) => d.assigned > 0);
-  const el      = $('cat-summary-list');
-  const count   = $('cat-summary-count');
+  const envs = state.envelopes || [];
+  const el = $('cat-summary-list');
+  const count = $('cat-summary-count');
+  if (!el) return;
 
-  if (!entries.length) {
+  if (!envs.length) {
     el.innerHTML = `<div class="empty-state" style="padding:1.5rem">
-      <p>Sin categorías con asignación</p>
-      <span>Distribuye montos en tus fuentes primero</span>
+      <p>Sin sobres definidos</p>
+      <span>Crea tus primeros sobres para visualizar su desglose</span>
     </div>`;
     if (count) count.textContent = '';
     return;
   }
 
-  if (count) count.textContent = `${entries.length} categorías`;
+  if (count) count.textContent = `${envs.length} ${envs.length === 1 ? 'sobre' : 'sobres'}`;
 
   el.innerHTML = `
     <div class="cat-summary-header">
-      <span>Categoría</span>
-      <span>Progreso</span>
-      <span style="text-align:right">Asignado</span>
+      <span>Sobre</span>
+      <span>Consumo</span>
+      <span style="text-align:right">Fondo total</span>
       <span style="text-align:right">Gastado</span>
       <span style="text-align:right">Disponible</span>
     </div>` +
-    entries.map(([cat, d]) => {
-      const pct       = d.assigned > 0 ? Math.min(100, (d.spent / d.assigned) * 100) : 0;
-      const remaining = d.assigned - d.spent;
-      const over      = remaining < 0;
+    envs.map((env) => {
+      const t = getEnvelopeTotals(env);
+      const isLocked = !!env.isLocked;
+      const isRevealed = _revealedEnvelopes.has(env.id);
+      const isMasked = isLocked && !isRevealed;
+      const over = t.available < 0;
+
       return `<div class="cat-summary-row">
         <div class="cat-sum-name">
-          <span class="cat-dot" style="background:${d.color}"></span>
-          ${cat}
+          <span class="cat-dot" style="background:${env.color || 'var(--text)'}"></span>
+          ${env.name}
+          ${isLocked ? `
+            <span class="envelope-badge-locked" style="margin-left:0.4rem;font-size:0.65rem;padding:0.1rem 0.35rem">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Protegido
+            </span>` : ''}
         </div>
         <div class="cat-sum-bar-wrap">
           <div class="cat-sum-bar">
-            <div class="cat-sum-bar-fill" style="width:${pct}%;background:${over ? 'var(--danger)' : d.color}"></div>
+            <div class="cat-sum-bar-fill" style="width:${t.pctSpent}%;background:${over ? 'var(--danger)' : (env.color || 'var(--text)')}"></div>
           </div>
-          <span class="cat-sum-pct">${Math.round(pct)}%</span>
+          <span class="cat-sum-pct">${Math.round(t.pctSpent)}%</span>
         </div>
         <div class="cat-sum-values">
           <div class="cat-sum-col">
-            <div class="label">Asignado</div>
-            <div class="val">${money(d.assigned)}</div>
+            <div class="label">Fondo total</div>
+            <div class="val">${isMasked ? '₡***' : money(t.totalFunds)}</div>
           </div>
           <div class="cat-sum-col">
             <div class="label">Gastado</div>
-            <div class="val spent">-${money(d.spent)}</div>
+            <div class="val spent">-${money(t.spent)}</div>
           </div>
           <div class="cat-sum-col">
             <div class="label">Disponible</div>
-            <div class="val ${over ? 'over' : 'remaining'}">${over ? '-' : ''}${money(Math.abs(remaining))}</div>
+            <div class="val ${over ? 'over' : 'remaining'}">${isMasked ? '₡***' : money(t.available)}</div>
           </div>
         </div>
       </div>`;
@@ -2130,6 +2947,8 @@ function _startApp() {
   const srcDateEl = $('source-date');
   if (srcDateEl) srcDateEl.valueAsDate = new Date();
   applyTheme();
+  ensureEnvelopes();
+  initTotalWealthToggle();
   renderAll();
   initCustomSelects();
   switchTab('dashboard');
@@ -2150,8 +2969,11 @@ async function handleUserSession(user) {
 
     // Limpiar estado en memoria para que no queden datos de un usuario previo
     Object.assign(state, {
+      envelopes: [],
       sources: [],
+      incomes: [],
       expenses: [],
+      transfers: [],
       categories: DEFAULT_CATEGORIES,
       assignments: [],
       editingSourceId: null,
@@ -2189,8 +3011,11 @@ async function handleUserSession(user) {
         Object.assign(state, JSON.parse(cached), { editingSourceId: null });
       } else {
         Object.assign(state, {
+          envelopes: [],
           sources: [],
+          incomes: [],
           expenses: [],
+          transfers: [],
           categories: DEFAULT_CATEGORIES,
           assignments: []
         });
@@ -2200,6 +3025,7 @@ async function handleUserSession(user) {
     console.warn('Error cargando de Firestore, usando caché local:', err);
   }
 
+  ensureEnvelopes();
   if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
   if (!Array.isArray(state.assignments)) state.assignments = [];
 
@@ -2212,11 +3038,12 @@ async function handleUserSession(user) {
   _unsubscribeFirestore = window.FBAuth.subscribeToUserState(user.uid, (remote) => {
     if (!remote || remote._deviceId === _deviceId) return;
     Object.assign(state, remote, { editingSourceId: state.editingSourceId });
+    ensureEnvelopes();
     if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
     if (!Array.isArray(state.assignments)) state.assignments = [];
     reconcileAssignmentsWithDistributions();
     renderOnly();
-    toast('🔄 Sincronizado');
+    toast('Sincronizado');
   });
 
   if (shell) shell.style.visibility = 'visible';

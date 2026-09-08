@@ -36,11 +36,11 @@
     <nav class="sidebar-nav">
       <button class="nav-item active" data-tab="dashboard">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        Dashboard
+        Sobres
       </button>
       <button class="nav-item" data-tab="sources">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        Fuentes
+        Ingresos
       </button>
       <button class="nav-item" data-tab="categories">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
@@ -107,59 +107,79 @@
       <section class="tab-panel active" id="tab-dashboard">
         <div class="page-header">
           <div>
-            <h1>Dashboard</h1>
-            <p class="muted">Resumen financiero general</p>
+            <h1>Sobres de Transición</h1>
+            <p class="muted">Gestión por fondos independientes y disciplina presupuestaria</p>
+          </div>
+          <div class="header-actions">
+            <div class="total-wealth-pill" id="total-wealth-pill">
+              <span class="total-wealth-label">Patrimonio Total:</span>
+              <span class="total-wealth-val" id="total-wealth-val">₡***</span>
+              <button type="button" class="btn-eye-toggle" id="btn-toggle-total-wealth" title="Revelar o proteger patrimonio total" aria-label="Revelar o proteger patrimonio total">
+                <svg id="icon-eye-total" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <svg id="icon-eye-off-total" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+              </button>
+            </div>
+            <button type="button" class="btn-primary" onclick="openCreateEnvelopeModal()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Nuevo sobre
+            </button>
           </div>
         </div>
 
-        <!-- KPIs -->
-        <div class="kpi-grid" id="kpis"></div>
+        <!-- Envelope Cards Panel -->
+        <div class="envelopes-grid" id="envelopes-grid"></div>
 
-        <!-- Charts -->
+        <!-- Charts (Per-envelope analysis without global sum) -->
         <div class="charts-grid">
           <div class="card">
             <div class="card-header">
-              <h3>Distribución por categoría</h3>
+              <h3>Gastos por sobre</h3>
             </div>
             <div class="chart-wrap"><canvas id="chart-categories"></canvas></div>
           </div>
           <div class="card">
             <div class="card-header">
-              <h3>Asignado vs Gastado</h3>
+              <h3>Fondo base vs. Gastado por sobre</h3>
             </div>
             <div class="chart-wrap"><canvas id="chart-balance"></canvas></div>
           </div>
         </div>
 
-        <!-- Category balance summary -->
+        <!-- Summary per envelope -->
         <div class="card">
           <div class="card-header">
-            <h3>Saldo por categoría</h3>
+            <h3>Estado detallado de sobres</h3>
             <span class="badge-count" id="cat-summary-count"></span>
           </div>
           <div id="cat-summary-list"></div>
         </div>
 
-        <!-- Recent expenses -->
+        <!-- Recent transactions -->
         <div class="card">
           <div class="card-header">
-            <h3>Últimos gastos</h3>
-            <button class="btn-link" data-tab-link="expenses">Ver todos →</button>
+            <h3>Últimos movimientos</h3>
+            <button class="btn-link" data-tab-link="expenses">Ver todos los gastos →</button>
           </div>
           <div id="recent-expenses-list"></div>
         </div>
       </section>
 
-      <!-- ===== SOURCES TAB ===== -->
+      <!-- ===== SOURCES / INCOMES TAB ===== -->
       <section class="tab-panel" id="tab-sources">
         <div class="page-header">
           <div>
-            <h1>Fuentes de ingreso</h1>
-            <p class="muted">Administra tus fuentes y su distribución</p>
+            <h1>Ingresos y Entradas</h1>
+            <p class="muted">Inyecta dinero nuevo directamente al sobre que elijas</p>
           </div>
-          <button type="button" class="btn-primary" onclick="openSourceModal()">
+          <button type="button" class="btn-primary" onclick="openIncomeModal()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nueva fuente
+            Nuevo ingreso
           </button>
         </div>
 
@@ -171,7 +191,7 @@
         <div class="page-header">
           <div>
             <h1>Categorías</h1>
-            <p class="muted">Presupuesto consolidado y balance en tiempo real</p>
+            <p class="muted">Etiquetas para clasificar y organizar tus gastos</p>
           </div>
           <button type="button" class="btn-primary" onclick="openCategoryModal()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -187,7 +207,7 @@
         <div class="page-header">
           <div>
             <h1>Gastos</h1>
-            <p class="muted">Registra y revisa tus movimientos financieros</p>
+            <p class="muted">Registra egresos descontando del sobre correspondiente</p>
           </div>
           <button type="button" class="btn-primary" onclick="openExpenseModal()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -199,7 +219,7 @@
           <div class="card-header">
             <h3>Historial de gastos</h3>
             <div class="filters">
-              <select id="filter-source"><option value="">Todas las fuentes</option></select>
+              <select id="filter-envelope"><option value="">Todos los sobres</option></select>
               <select id="filter-category"><option value="">Todas las categorías</option></select>
             </div>
           </div>
@@ -215,13 +235,13 @@
         <div class="bnav-icon-wrap">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         </div>
-        <span>Inicio</span>
+        <span>Sobres</span>
       </button>
       <button class="bnav-item" data-tab="sources">
         <div class="bnav-icon-wrap">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         </div>
-        <span>Fuentes</span>
+        <span>Ingresos</span>
       </button>
       <button class="bnav-item" data-tab="categories">
         <div class="bnav-icon-wrap">

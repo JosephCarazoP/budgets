@@ -693,6 +693,460 @@ a {
 }
 
 /* ============================================================
+   TOTAL WEALTH PILL (PATRIMONIO TOTAL BAJO DEMANDA)
+   ============================================================ */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.total-wealth-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.32rem 0.75rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  transition: border-color var(--transition), background var(--transition);
+  user-select: none;
+}
+
+.total-wealth-pill:hover {
+  border-color: var(--border-hover);
+}
+
+.total-wealth-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.total-wealth-val {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.btn-eye-toggle {
+  background: transparent;
+  border: none;
+  padding: 2px;
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  transition: color var(--transition), transform var(--transition);
+  line-height: 1;
+}
+
+.btn-eye-toggle:hover {
+  color: var(--text);
+  transform: scale(1.1);
+}
+
+/* ============================================================
+   ENVELOPES GRID & CARDS (SISTEMA DE SOBRES)
+   ============================================================ */
+
+.envelopes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.envelope-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+  min-height: 180px;
+  box-shadow: var(--shadow-xs);
+}
+
+.envelope-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow);
+}
+
+/* Protección psicológica para Ahorro Intocable */
+.envelope-card--locked {
+  border-color: rgba(99, 102, 241, 0.45);
+  background: linear-gradient(180deg, var(--card) 0%, rgba(99, 102, 241, 0.035) 100%);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.12), var(--shadow-xs);
+}
+
+html[data-theme="dark"] .envelope-card--locked {
+  border-color: rgba(129, 140, 248, 0.4);
+  background: linear-gradient(180deg, var(--card) 0%, rgba(99, 102, 241, 0.07) 100%);
+  box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.18), var(--shadow-xs);
+}
+
+.envelope-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.envelope-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.envelope-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.envelope-title-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.envelope-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.envelope-badge-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.12rem 0.45rem;
+  border-radius: var(--radius-xs);
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  width: fit-content;
+  margin-top: 0.15rem;
+}
+
+html[data-theme="dark"] .envelope-badge-locked {
+  background: rgba(129, 140, 248, 0.15);
+  color: #a5b4fc;
+  border-color: rgba(129, 140, 248, 0.3);
+}
+
+.envelope-menu-wrap {
+  position: relative;
+}
+
+.envelope-menu-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-xs);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.envelope-menu-btn:hover {
+  color: var(--text);
+  background: var(--bg-alt);
+  border-color: var(--border);
+}
+
+.envelope-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  min-width: 175px;
+  z-index: 50;
+  display: none;
+  padding: 0.3rem 0;
+}
+
+.envelope-menu-dropdown.open {
+  display: block;
+  animation: dropdownFade 0.12s ease-out;
+}
+
+@keyframes dropdownFade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.envelope-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.envelope-menu-item:hover {
+  background: var(--bg-alt);
+  color: var(--text);
+}
+
+.envelope-menu-item.danger:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.envelope-menu-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 0.3rem 0;
+}
+
+.envelope-balance-section {
+  margin-bottom: 0.75rem;
+}
+
+.envelope-balance-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.envelope-balance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.envelope-balance-val {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.03em;
+  font-feature-settings: 'tnum' 1;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.envelope-balance-val.over {
+  color: var(--danger);
+}
+
+.envelope-balance-masked {
+  letter-spacing: 0.15em;
+  color: var(--text-2);
+  font-weight: 600;
+  font-size: 1.35rem;
+}
+
+.envelope-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.envelope-progress-bar {
+  flex: 1;
+  height: 5px;
+  background: var(--bg-subtle);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.envelope-progress-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.3s ease;
+}
+
+.envelope-progress-pct {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-3);
+  font-feature-settings: 'tnum' 1;
+  min-width: 32px;
+  text-align: right;
+}
+
+.envelope-submetrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.envelope-metric {
+  display: flex;
+  flex-direction: column;
+}
+
+.envelope-metric .label {
+  font-size: 0.68rem;
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+.envelope-metric .val {
+  font-size: 0.78rem;
+  color: var(--text);
+  font-weight: 600;
+  font-feature-settings: 'tnum' 1;
+}
+
+.envelope-metric .val.spent {
+  color: var(--text-2);
+}
+
+/* Alerta de precaución para Ahorro Intocable en formularios */
+.psych-warning-box {
+  padding: 0.65rem 0.85rem;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: #4f46e5;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+}
+
+html[data-theme="dark"] .psych-warning-box {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.35);
+  color: #a5b4fc;
+}
+
+.psych-warning-box svg {
+  flex-shrink: 0;
+}
+
+/* Transfer Flow Box */
+.transfer-flow-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-alt);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin-bottom: 0.75rem;
+}
+
+.transfer-env-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.transfer-env-side .label {
+  font-size: 0.68rem;
+  color: var(--text-3);
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.transfer-env-side .name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.transfer-env-side .bal {
+  font-size: 0.72rem;
+  color: var(--text-2);
+  font-feature-settings: 'tnum' 1;
+}
+
+.transfer-arrow-icon {
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+/* Icon picker grid */
+.icon-picker-grid {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.icon-picker-item {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-2);
+  transition: all var(--transition);
+}
+
+.icon-picker-item:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+  background: var(--bg-subtle);
+}
+
+.icon-picker-item.selected {
+  border-color: var(--primary, #3b82f6);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--primary, #3b82f6);
+}
+
+/* ============================================================
    CHARTS
    ============================================================ */
 
