@@ -245,6 +245,25 @@ const Auth = {
           <button class="auth-submit-btn" id="portal-submit-btn">
             ${isLogin ? 'Iniciar Sesión' : 'Crear Cuenta Segura'}
           </button>
+
+          <div class="auth-offline-section">
+            <button type="button" class="auth-offline-btn" id="portal-offline-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="1" y1="1" x2="23" y2="23"/>
+                <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+                <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+                <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
+                <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+                <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                <line x1="12" y1="20" x2="12.01" y2="20"/>
+              </svg>
+              Continuar sin conexión (Modo Local)
+            </button>
+            ${!navigator.onLine ? `
+            <div class="auth-offline-notice">
+              Sin conexión a internet. Puedes trabajar en Modo Local y tus datos se guardarán en este dispositivo.
+            </div>` : ''}
+          </div>
         </form>`;
     }
 
@@ -323,6 +342,15 @@ const Auth = {
         googleBtn.style.opacity = '1';
         errBox.textContent = window.FBAuth.formatError(err);
         errBox.style.display = 'block';
+      }
+    });
+
+    // Botón de Modo Sin Conexión / Local
+    const offlineBtn = document.getElementById('portal-offline-btn');
+    offlineBtn?.addEventListener('click', () => {
+      Auth.hideAuthPortal();
+      if (typeof window.startOfflineGuestMode === 'function') {
+        window.startOfflineGuestMode();
       }
     });
 
@@ -579,11 +607,16 @@ const Auth = {
       return;
     }
 
-    const displayName = user.displayName || user.email.split('@')[0];
-    const initial = displayName.charAt(0).toUpperCase();
+    const isGuest = !!user.isGuest;
+    const isOffline = !!user.isOffline;
+    let displayName = isGuest ? 'Modo Local' : (user.displayName || user.email?.split('@')[0] || 'Usuario');
+    if (isOffline && !isGuest) {
+      displayName += ' (Sin red)';
+    }
+    const initial = isGuest ? '⚡' : displayName.charAt(0).toUpperCase();
 
     if (avatar) {
-      if (user.photoURL) {
+      if (user.photoURL && !isGuest) {
         avatar.innerHTML = `<img src="${user.photoURL}" alt="${displayName}" referrerpolicy="no-referrer" />`;
       } else {
         avatar.textContent = initial;
@@ -591,14 +624,22 @@ const Auth = {
     }
 
     if (nameEl) nameEl.textContent = displayName;
-    if (emailEl) emailEl.textContent = user.email || '';
+    if (emailEl) emailEl.textContent = isGuest ? 'Guardado en este equipo' : (user.email || 'Sin conexión');
     if (badge) badge.style.display = 'flex';
     if (logoutBtnMobile) logoutBtnMobile.style.display = 'flex';
 
     // Vincular cierre de sesión
     const handleLogout = async () => {
-      if (confirm('¿Cerrar sesión de BudgetFlow?')) {
-        if (window.FBAuth) await window.FBAuth.logout();
+      const msg = isGuest
+        ? '¿Salir del modo local y volver a la pantalla de acceso?'
+        : '¿Cerrar sesión de BudgetFlow?';
+      if (confirm(msg)) {
+        if (isGuest) {
+          localStorage.removeItem('bf_guest_mode');
+          window.location.reload();
+        } else if (window.FBAuth) {
+          await window.FBAuth.logout();
+        }
       }
     };
 

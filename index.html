@@ -48,6 +48,22 @@
       </button>
     </nav>
     <div class="sidebar-footer">
+      <!-- Sync Status (Desktop) -->
+      <div id="sync-status-sidebar" class="sync-status-card" title="Estado de sincronización">
+        <div class="sync-status-indicator">
+          <span class="sync-dot online" id="sync-dot-sidebar"></span>
+          <div class="sync-text-group">
+            <span class="sync-state-title" id="sync-title-sidebar">Sincronizado</span>
+            <span class="sync-state-desc" id="sync-desc-sidebar">Todo al día en la nube</span>
+          </div>
+        </div>
+        <button id="sync-now-btn-sidebar" class="sync-action-btn" title="Sincronizar ahora con la nube">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="sync-icon">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+        </button>
+      </div>
+
       <div id="user-profile-badge" class="user-profile-badge" style="display:none">
         <div class="user-profile-avatar" id="user-avatar">U</div>
         <div class="user-profile-info">
@@ -82,6 +98,14 @@
         <span>BudgetFlow</span>
       </div>
       <div class="topbar-actions">
+        <!-- Sync Status (Mobile) -->
+        <button id="sync-status-mobile" class="sync-pill-mobile" title="Estado de sincronización / Sincronizar">
+          <span class="sync-dot online" id="sync-dot-mobile"></span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="sync-icon-m" id="sync-icon-mobile">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          <span class="sync-pill-text" id="sync-text-mobile">En línea</span>
+        </button>
         <button id="user-logout-btn-mobile" class="icon-btn topbar-btn" title="Cerrar sesión" style="display:none">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>

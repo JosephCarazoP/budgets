@@ -318,24 +318,222 @@ const compareByDateDesc = (a, b) => {
 // ID único por pestaña/dispositivo — se regenera con cada recarga
 const _deviceId = Math.random().toString(36).slice(2, 8);
 
-/** Guarda en localStorage y en Firestore (por usuario) o Supabase (fallback). */
+/* ============================================================
+   SYNC MANAGER (OFFLINE-FIRST & CLOUD SYNC ENGINE)
+   ============================================================ */
+const SyncManager = {
+  isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+  isSyncing: false,
+  pendingChanges: false,
+  _activeUser: null,
+  _isGuest: false,
+
+  init() {
+    this.isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    this._readPendingMeta();
+
+    window.addEventListener('online', () => {
+      this.isOnline = true;
+      this.updateUI();
+      toast('Conexión restablecida — Sincronizando datos con la nube...', 2800);
+      this.syncPending();
+    });
+
+    window.addEventListener('offline', () => {
+      this.isOnline = false;
+      this.updateUI();
+      toast('Estás sin conexión — Tus cambios se guardarán en este equipo', 3200);
+    });
+
+    // Vincular botones interactivos de sincronización manual
+    document.getElementById('sync-now-btn-sidebar')?.addEventListener('click', () => {
+      this.forceSync();
+    });
+
+    document.getElementById('sync-status-mobile')?.addEventListener('click', () => {
+      this.forceSync();
+    });
+
+    this.updateUI();
+  },
+
+  setUser(user, isGuest = false) {
+    this._activeUser = user;
+    this._isGuest = isGuest;
+    this._readPendingMeta();
+    this.updateUI();
+  },
+
+  _getMetaKey() {
+    const uid = this._activeUser?.uid || (this._isGuest ? 'guest' : 'default');
+    return `bf_sync_meta_${uid}`;
+  },
+
+  _readPendingMeta() {
+    try {
+      const data = localStorage.getItem(this._getMetaKey());
+      if (data) {
+        const parsed = JSON.parse(data);
+        this.pendingChanges = !!parsed.pending;
+      } else {
+        this.pendingChanges = false;
+      }
+    } catch (_) {
+      this.pendingChanges = false;
+    }
+  },
+
+  _setPendingMeta(isPending) {
+    this.pendingChanges = isPending;
+    try {
+      localStorage.setItem(this._getMetaKey(), JSON.stringify({
+        pending: isPending,
+        updatedAt: new Date().toISOString()
+      }));
+    } catch (_) {}
+    this.updateUI();
+  },
+
+  markDirty() {
+    this._setPendingMeta(true);
+  },
+
+  updateUI() {
+    const dotSidebar = document.getElementById('sync-dot-sidebar');
+    const titleSidebar = document.getElementById('sync-title-sidebar');
+    const descSidebar = document.getElementById('sync-desc-sidebar');
+    const btnSidebar = document.getElementById('sync-now-btn-sidebar');
+
+    const dotMobile = document.getElementById('sync-dot-mobile');
+    const textMobile = document.getElementById('sync-text-mobile');
+    const pillMobile = document.getElementById('sync-status-mobile');
+
+    let dotClass = 'online';
+    let title = 'Sincronizado';
+    let desc = 'Todo al día en la nube';
+    let mobileText = 'En línea';
+
+    if (this.isSyncing) {
+      dotClass = 'syncing';
+      title = 'Sincronizando...';
+      desc = 'Subiendo cambios a la nube';
+      mobileText = 'Sincronizando';
+    } else if (!this.isOnline) {
+      dotClass = 'offline';
+      title = this._isGuest ? 'Modo Local' : 'Sin conexión';
+      desc = this.pendingChanges ? 'Cambios guardados en este equipo' : 'Operando sin internet';
+      mobileText = this.pendingChanges ? 'Guardado local' : 'Sin red';
+    } else if (this._isGuest) {
+      dotClass = 'offline';
+      title = 'Modo Local';
+      desc = 'Tus datos están en este equipo';
+      mobileText = 'Local';
+    } else if (this.pendingChanges) {
+      dotClass = 'offline';
+      title = 'Pendiente de subir';
+      desc = 'Pulsa para subir a la nube';
+      mobileText = 'Pendiente';
+    }
+
+    // Actualizar sidebar (desktop)
+    if (dotSidebar) dotSidebar.className = `sync-dot ${dotClass}`;
+    if (titleSidebar) titleSidebar.textContent = title;
+    if (descSidebar) descSidebar.textContent = desc;
+    if (btnSidebar) {
+      if (this.isSyncing) btnSidebar.classList.add('spinning');
+      else btnSidebar.classList.remove('spinning');
+    }
+
+    // Actualizar topbar (mobile)
+    if (dotMobile) dotMobile.className = `sync-dot ${dotClass}`;
+    if (textMobile) textMobile.textContent = mobileText;
+    if (pillMobile) {
+      if (this.isSyncing) pillMobile.classList.add('spinning');
+      else pillMobile.classList.remove('spinning');
+    }
+  },
+
+  async syncPending() {
+    if (!this.isOnline || this.isSyncing || this._isGuest) return;
+    if (!window.FBAuth || !window.FBAuth.currentUser) return;
+
+    this.isSyncing = true;
+    this.updateUI();
+
+    const uid = window.FBAuth.currentUser.uid;
+    try {
+      const payload = { ...state, _deviceId };
+      const ok = await window.FBAuth.saveUserState(uid, payload);
+      if (ok) {
+        this._setPendingMeta(false);
+        toast('¡Todo sincronizado con la nube!', 2200);
+      }
+    } catch (err) {
+      console.warn('SyncManager: error en sincronización:', err);
+    } finally {
+      this.isSyncing = false;
+      this.updateUI();
+    }
+  },
+
+  async forceSync() {
+    if (!this.isOnline) {
+      toast('No hay conexión a internet actualmente. Los cambios están guardados en tu equipo.', 3200);
+      return;
+    }
+    if (this._isGuest) {
+      toast('Estás en Modo Local. Para guardar en la nube, inicia sesión en Seguridad.', 3500);
+      return;
+    }
+    toast('Sincronizando con la nube...', 1400);
+    await this.syncPending();
+  }
+};
+
+/** Guarda inmediatamente en localStorage (offline-first) y sincroniza con Firestore/Supabase. */
 function save() {
-  if (window.FBAuth && window.FBAuth.isConfigured() && window.FBAuth.currentUser) {
+  state.lastModifiedAt = new Date().toISOString();
+
+  // 1. Persistencia local inmediata (cero latencia, offline garantizado)
+  if (window.FBAuth && window.FBAuth.currentUser) {
     const uid = window.FBAuth.currentUser.uid;
     localStorage.setItem('budget_state_' + uid, JSON.stringify(state));
-    window.FBAuth.saveUserState(uid, { ...state, _deviceId });
+  } else if (localStorage.getItem('bf_guest_mode') === 'true') {
+    localStorage.setItem('budget_state_local', JSON.stringify(state));
+  } else {
+    localStorage.setItem('budget_state', JSON.stringify(state));
+  }
+
+  // 2. Marcar cambios pendientes en metadata de sincronización
+  SyncManager.markDirty();
+
+  // 3. Si hay red y usuario autenticado en Firebase, subir a Firestore en background
+  if (SyncManager.isOnline && window.FBAuth && window.FBAuth.isConfigured() && window.FBAuth.currentUser) {
+    const uid = window.FBAuth.currentUser.uid;
+    window.FBAuth.saveUserState(uid, { ...state, _deviceId }).then((ok) => {
+      if (ok) {
+        SyncManager._setPendingMeta(false);
+      }
+    }).catch((err) => {
+      console.warn('BudgetFlow: Guardado diferido por error de red:', err?.message);
+    });
     return;
   }
 
-  localStorage.setItem('budget_state', JSON.stringify(state));
-  if (!db) return;
-  const payload = { ...state, _deviceId };
-  db.from('budget_state')
-    .update({ data: payload, updated_at: new Date().toISOString() })
-    .eq('id', STATE_ROW_ID)
-    .then(({ error }) => {
-      if (error) console.error('BudgetFlow: error al sincronizar con Supabase:', error);
-    });
+  // Fallback a Supabase si aplica
+  if (db && SyncManager.isOnline) {
+    const payload = { ...state, _deviceId };
+    db.from('budget_state')
+      .update({ data: payload, updated_at: new Date().toISOString() })
+      .eq('id', STATE_ROW_ID)
+      .then(({ error }) => {
+        if (!error) {
+          SyncManager._setPendingMeta(false);
+        } else {
+          console.warn('BudgetFlow: error al sincronizar con Supabase:', error);
+        }
+      });
+  }
 }
 
 function migrateAssignmentsIfNeeded() {
@@ -1422,6 +1620,7 @@ window.openDeleteEnvelopeModal = function(envId) {
 let categoriesChart, balanceChart;
 
 function renderCharts() {
+  if (typeof Chart === 'undefined') return;
   const envs = state.envelopes || [];
   const labels = envs.map((e) => e.name);
   const colors = envs.map((e) => e.color || '#64748b');
@@ -2924,18 +3123,87 @@ function _startApp() {
 
 let _unsubscribeFirestore = null;
 
+window.startOfflineGuestMode = function() {
+  localStorage.setItem('bf_guest_mode', 'true');
+  const guestUser = {
+    uid: 'guest',
+    displayName: 'Modo Local',
+    email: '',
+    isGuest: true,
+    isOffline: !navigator.onLine
+  };
+
+  SyncManager.setUser(guestUser, true);
+
+  if (window.Auth) {
+    window.Auth.hideAuthPortal();
+    window.Auth.updateUserProfile(guestUser);
+  }
+
+  const cached = localStorage.getItem('budget_state_local');
+  if (cached) {
+    try {
+      Object.assign(state, JSON.parse(cached), { editingSourceId: null });
+    } catch (_) {}
+  } else {
+    const prev = localStorage.getItem('budget_state');
+    if (prev) {
+      try {
+        Object.assign(state, JSON.parse(prev), { editingSourceId: null });
+      } catch (_) {}
+    } else {
+      Object.assign(state, {
+        envelopes: [],
+        sources: [],
+        incomes: [],
+        expenses: [],
+        transfers: [],
+        categories: DEFAULT_CATEGORIES,
+        assignments: []
+      });
+    }
+  }
+
+  ensureEnvelopes();
+  if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+  if (!Array.isArray(state.assignments)) state.assignments = [];
+
+  migrateAssignmentsIfNeeded();
+  reconcileAssignmentsWithDistributions();
+  rebuildDistributionsFromAssignments();
+
+  const shell = document.querySelector('.app-shell');
+  const sidebar = document.getElementById('sidebar');
+  if (shell) shell.style.visibility = 'visible';
+  if (sidebar) sidebar.style.visibility = 'visible';
+
+  _startApp();
+  toast('Iniciado en Modo Local (los datos se guardan en este dispositivo)', 3200);
+};
+
 async function handleUserSession(user) {
   const shell = document.querySelector('.app-shell');
   const sidebar = document.getElementById('sidebar');
 
+  // Si no hay usuario activo pero estamos offline, intentar restaurar sesión previa o modo local
+  if (!user && !navigator.onLine) {
+    const lastUser = window.FBAuth?.getLastStoredUser();
+    if (lastUser) {
+      console.log('BudgetFlow: Restaurando sesión offline para:', lastUser.email);
+      user = { ...lastUser, isOffline: true };
+    } else if (localStorage.getItem('bf_guest_mode') === 'true') {
+      window.startOfflineGuestMode();
+      return;
+    }
+  }
+
   if (!user) {
-    // Si se cierra sesión: detener sincronización en tiempo real
+    SyncManager.setUser(null, false);
     if (_unsubscribeFirestore) {
       _unsubscribeFirestore();
       _unsubscribeFirestore = null;
     }
 
-    // Limpiar estado en memoria para que no queden datos de un usuario previo
     Object.assign(state, {
       envelopes: [],
       sources: [],
@@ -2962,35 +3230,40 @@ async function handleUserSession(user) {
     return;
   }
 
-  // Usuario autenticado: mostrar portal
+  // Usuario autenticado (u offline restaurado)
+  SyncManager.setUser(user, false);
   if (window.Auth) {
     window.Auth.hideAuthPortal();
     window.Auth.updateUserProfile(user);
   }
 
-  // Cargar datos de este usuario desde Firestore
-  try {
-    const remoteState = await window.FBAuth.loadUserState(user.uid);
-    if (remoteState) {
-      Object.assign(state, remoteState, { editingSourceId: null });
+  // PASO 1: Carga local inmediata desde localStorage (cero latencia, offline garantizado)
+  const cached = localStorage.getItem('budget_state_' + user.uid);
+  if (cached) {
+    try {
+      Object.assign(state, JSON.parse(cached), { editingSourceId: null });
+    } catch (_) {}
+  } else {
+    // Si viene de modo local con datos previos, migrarlos automáticamente a la cuenta
+    const localGuestData = localStorage.getItem('budget_state_local');
+    if (localGuestData) {
+      try {
+        Object.assign(state, JSON.parse(localGuestData), { editingSourceId: null });
+        SyncManager.markDirty();
+        localStorage.removeItem('budget_state_local');
+        localStorage.removeItem('bf_guest_mode');
+      } catch (_) {}
     } else {
-      const cached = localStorage.getItem('budget_state_' + user.uid);
-      if (cached) {
-        Object.assign(state, JSON.parse(cached), { editingSourceId: null });
-      } else {
-        Object.assign(state, {
-          envelopes: [],
-          sources: [],
-          incomes: [],
-          expenses: [],
-          transfers: [],
-          categories: DEFAULT_CATEGORIES,
-          assignments: []
-        });
-      }
+      Object.assign(state, {
+        envelopes: [],
+        sources: [],
+        incomes: [],
+        expenses: [],
+        transfers: [],
+        categories: DEFAULT_CATEGORIES,
+        assignments: []
+      });
     }
-  } catch (err) {
-    console.warn('Error cargando de Firestore, usando caché local:', err);
   }
 
   ensureEnvelopes();
@@ -3001,30 +3274,72 @@ async function handleUserSession(user) {
   reconcileAssignmentsWithDistributions();
   rebuildDistributionsFromAssignments();
 
-  // Escuchar cambios en Firestore en tiempo real para este usuario
-  if (_unsubscribeFirestore) _unsubscribeFirestore();
-  _unsubscribeFirestore = window.FBAuth.subscribeToUserState(user.uid, (remote) => {
-    if (!remote || remote._deviceId === _deviceId) return;
-    Object.assign(state, remote, { editingSourceId: state.editingSourceId });
-    ensureEnvelopes();
-    if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
-    if (!Array.isArray(state.assignments)) state.assignments = [];
-    reconcileAssignmentsWithDistributions();
-    renderOnly();
-    toast('Sincronizado');
-  });
-
+  // Mostrar la interfaz inmediatamente
   if (shell) shell.style.visibility = 'visible';
   if (sidebar) sidebar.style.visibility = 'visible';
-
   _startApp();
+
+  // PASO 2: Sincronización en segundo plano con Cloud Firestore si hay red
+  if (SyncManager.isOnline && !user.isOffline && window.FBAuth) {
+    (async () => {
+      try {
+        if (SyncManager.pendingChanges) {
+          // Si había cambios pendientes guardados sin conexión, subirlos a la nube
+          await SyncManager.syncPending();
+        } else {
+          // Si no hay cambios locales pendientes, verificar si en Firestore hay versión más reciente
+          const remoteState = await window.FBAuth.loadUserState(user.uid, 3500);
+          if (remoteState) {
+            Object.assign(state, remoteState, { editingSourceId: null });
+            ensureEnvelopes();
+            if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+            if (!Array.isArray(state.assignments)) state.assignments = [];
+            reconcileAssignmentsWithDistributions();
+            rebuildDistributionsFromAssignments();
+            localStorage.setItem('budget_state_' + user.uid, JSON.stringify(state));
+            renderOnly();
+          }
+        }
+      } catch (err) {
+        console.warn('BudgetFlow: No se pudo refrescar de Firestore en segundo plano:', err);
+      }
+    })();
+  }
+
+  // Escuchar cambios en Firestore en tiempo real
+  if (_unsubscribeFirestore) _unsubscribeFirestore();
+  if (window.FBAuth && !user.isOffline) {
+    _unsubscribeFirestore = window.FBAuth.subscribeToUserState(user.uid, (remote, metadata) => {
+      if (!remote || remote._deviceId === _deviceId) return;
+      // Si tenemos cambios pendientes locales offline, proteger nuestro trabajo local
+      if (SyncManager.pendingChanges) {
+        console.warn('BudgetFlow: Se omitió actualización remota para proteger cambios locales pendientes.');
+        return;
+      }
+      Object.assign(state, remote, { editingSourceId: state.editingSourceId });
+      ensureEnvelopes();
+      if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
+      if (!Array.isArray(state.assignments)) state.assignments = [];
+      reconcileAssignmentsWithDistributions();
+      localStorage.setItem('budget_state_' + user.uid, JSON.stringify(state));
+      renderOnly();
+      toast('Sincronizado');
+    });
+  }
 }
 
 (async () => {
   applyTheme();
+  SyncManager.init();
 
   if (window.Auth && window.Auth._initInactivityTracker) {
     window.Auth._initInactivityTracker();
+  }
+
+  // Si el usuario estaba previamente en modo local/invitado
+  if (localStorage.getItem('bf_guest_mode') === 'true' && !window.FBAuth?.currentUser) {
+    window.startOfflineGuestMode();
+    return;
   }
 
   if (window.FBAuth) {
@@ -3034,12 +3349,19 @@ async function handleUserSession(user) {
         handleUserSession(user);
       });
     } else {
-      // Si falta configurar Firebase, mostrar el portal con pestaña de login
-      if (window.Auth) {
-        window.Auth.showAuthPortal({
-          defaultTab: 'login',
-          onAuthSuccess: (user) => handleUserSession(user)
-        });
+      // Si no hay red o falta configurar Firebase, comprobar si hay usuario guardado previamente
+      const lastUser = window.FBAuth.getLastStoredUser();
+      if (lastUser) {
+        handleUserSession({ ...lastUser, isOffline: true });
+      } else if (localStorage.getItem('bf_guest_mode') === 'true') {
+        window.startOfflineGuestMode();
+      } else {
+        if (window.Auth) {
+          window.Auth.showAuthPortal({
+            defaultTab: 'login',
+            onAuthSuccess: (user) => handleUserSession(user)
+          });
+        }
       }
     }
   } else {

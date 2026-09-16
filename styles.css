@@ -3891,3 +3891,155 @@ details[open] > summary::before {
   }
 }
 
+/* ============================================================
+   SYNC STATUS & OFFLINE-FIRST UI (Linear & Vercel Aesthetic)
+   ============================================================ */
+
+.sync-status-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  margin-bottom: 0.45rem;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.sync-status-card:hover {
+  border-color: var(--border);
+}
+
+.sync-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.sync-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background-color var(--transition), box-shadow var(--transition);
+}
+
+.sync-dot.online {
+  background: #10b981;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #10b981 25%, transparent);
+  animation: syncPulse 2.8s infinite;
+}
+
+.sync-dot.offline {
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #f59e0b 25%, transparent);
+}
+
+.sync-dot.syncing {
+  background: #3b82f6;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #3b82f6 30%, transparent);
+  animation: syncPulseFast 1s infinite;
+}
+
+.sync-text-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sync-state-title {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sync-state-desc {
+  font-size: 0.66rem;
+  color: var(--text-2);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sync-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+
+.sync-action-btn:hover {
+  background: var(--bg);
+  border-color: var(--border-subtle);
+  color: var(--text);
+}
+
+.sync-action-btn:active {
+  transform: scale(0.92);
+}
+
+.sync-action-btn.spinning .sync-icon,
+.sync-pill-mobile.spinning .sync-icon-m {
+  animation: syncSpin 0.75s linear infinite;
+  color: #3b82f6;
+}
+
+/* Mobile Sync Pill */
+.sync-pill-mobile {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9999px;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  height: 30px;
+  transition: all var(--transition);
+}
+
+.sync-pill-mobile:hover,
+.sync-pill-mobile:active {
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.sync-pill-mobile .sync-icon-m {
+  opacity: 0.7;
+}
+
+@keyframes syncSpin {
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes syncPulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+  70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+@keyframes syncPulseFast {
+  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
+  70% { box-shadow: 0 0 0 5px rgba(59, 130, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+

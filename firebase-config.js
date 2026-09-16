@@ -78,11 +78,33 @@ const FBAuth = {
       }
 
       firestoreDb = firebase.firestore();
+      try {
+        await firestoreDb.enablePersistence({ synchronizeTabs: true });
+        console.log('BudgetFlow: Persistencia offline de Firestore activada.');
+      } catch (pErr) {
+        if (pErr.code === 'failed-precondition') {
+          console.warn('Persistencia Firestore: múltiples pestañas abiertas simultáneamente.');
+        } else if (pErr.code === 'unimplemented') {
+          console.warn('Persistencia Firestore: el navegador no soporta IndexedDB persistence.');
+        } else {
+          console.warn('Aviso habilitando persistencia Firestore:', pErr);
+        }
+      }
+
       firebaseAuth = firebase.auth();
 
       // Escuchar cambios de autenticación
       firebaseAuth.onAuthStateChanged((user) => {
         FBAuth.currentUser = user;
+        if (user) {
+          try {
+            localStorage.setItem('bf_last_user', JSON.stringify({
+              uid: user.uid,
+              displayName: user.displayName || user.email?.split('@')[0] || 'Usuario',
+              email: user.email || ''
+            }));
+          } catch (_) {}
+        }
         FBAuth._notify(user);
       });
 
@@ -90,6 +112,15 @@ const FBAuth = {
     } catch (err) {
       console.error('Error inicializando Firebase:', err);
       return false;
+    }
+  },
+
+  getLastStoredUser() {
+    try {
+      const u = localStorage.getItem('bf_last_user');
+      return u ? JSON.parse(u) : null;
+    } catch (_) {
+      return null;
     }
   },
 
@@ -135,10 +166,14 @@ const FBAuth = {
   },
 
   async logout() {
+    try {
+      localStorage.removeItem('bf_last_user');
+    } catch (_) {}
     if (firebaseAuth) {
       await firebaseAuth.signOut();
     }
     FBAuth.currentUser = null;
+    FBAuth._notify(null);
   },
 
   async sendPasswordReset(email) {
@@ -196,17 +231,21 @@ const FBAuth = {
     return firestoreDb.collection('users').doc(userId).collection('data').doc('budget_state');
   },
 
-  async loadUserState(userId) {
+  async loadUserState(userId, timeoutMs = 3500) {
     if (!firestoreDb || !userId) return null;
     try {
-      const doc = await this.getUserDocRef(userId).get();
-      if (doc.exists) {
+      const getPromise = this.getUserDocRef(userId).get();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Firestore timeout')), timeoutMs)
+      );
+      const doc = await Promise.race([getPromise, timeoutPromise]);
+      if (doc && doc.exists) {
         return doc.data();
       }
       return null;
     } catch (err) {
-      console.error('Error cargando datos de Firestore:', err);
-      throw err;
+      console.warn('BudgetFlow: No se pudo obtener de Firestore inmediatamente (posible offline):', err.message);
+      return null;
     }
   },
 
@@ -215,19 +254,20 @@ const FBAuth = {
     try {
       const cleanData = JSON.parse(JSON.stringify(stateData));
       cleanData.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+      cleanData.clientUpdatedAt = new Date().toISOString();
       await this.getUserDocRef(userId).set(cleanData, { merge: true });
       return true;
     } catch (err) {
-      console.error('Error guardando en Firestore:', err);
-      throw err;
+      console.warn('BudgetFlow: Error sincronizando Firestore (guardado en cola offline):', err.message);
+      return false;
     }
   },
 
   subscribeToUserState(userId, onUpdate) {
     if (!firestoreDb || !userId) return () => {};
-    return this.getUserDocRef(userId).onSnapshot((doc) => {
-      if (doc.exists && onUpdate) {
-        onUpdate(doc.data());
+    return this.getUserDocRef(userId).onSnapshot({ includeMetadataChanges: true }, (doc) => {
+      if (doc && doc.exists && onUpdate) {
+        onUpdate(doc.data(), doc.metadata);
       }
     }, (err) => {
       console.warn('Error en listener de Firestore:', err);

@@ -1,5 +1,7 @@
-const VERSION = 'v8';
-const CACHE = `budgetflow-static-${VERSION}`;
+const VERSION = 'v9';
+const STATIC_CACHE = `budgetflow-static-${VERSION}`;
+const RUNTIME_CACHE = `budgetflow-runtime-${VERSION}`;
+
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -16,6 +18,7 @@ const APP_SHELL = [
   '/icons/favicon.png',
   '/icons/favicon.svg'
 ];
+
 const CRITICAL_ASSETS = new Set([
   '/index.html',
   '/app.js',
@@ -27,15 +30,29 @@ const CRITICAL_ASSETS = new Set([
   '/icons/icon-192.png'
 ]);
 
+const ALLOWED_CDN_HOSTS = new Set([
+  'www.gstatic.com',
+  'gstatic.com',
+  'cdn.jsdelivr.net',
+  'fonts.googleapis.com',
+  'fonts.gstatic.com'
+]);
+
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));
+  event.waitUntil(
+    caches.open(STATIC_CACHE).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)));
+      await Promise.all(
+        keys
+          .filter((key) => key !== STATIC_CACHE && key !== RUNTIME_CACHE)
+          .map((key) => caches.delete(key))
+      );
       await self.clients.claim();
     })()
   );
@@ -51,14 +68,47 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
-  if (url.origin !== self.location.origin) return;
 
+  // Manejo de recursos externos (Firebase compat, Chart.js, Supabase, Google Fonts)
+  if (url.origin !== self.location.origin) {
+    if (ALLOWED_CDN_HOSTS.has(url.hostname)) {
+      event.respondWith(
+        caches.open(RUNTIME_CACHE).then(async (cache) => {
+          const cachedResponse = await cache.match(event.request);
+          if (cachedResponse) {
+            // Actualizar en segundo plano si hay red disponible
+            fetch(event.request)
+              .then((networkResponse) => {
+                if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
+                  cache.put(event.request, networkResponse);
+                }
+              })
+              .catch(() => {});
+            return cachedResponse;
+          }
+
+          try {
+            const networkResponse = await fetch(event.request);
+            if (networkResponse && (networkResponse.status === 200 || networkResponse.type === 'opaque')) {
+              cache.put(event.request, networkResponse.clone());
+            }
+            return networkResponse;
+          } catch (err) {
+            return cachedResponse || Response.error();
+          }
+        })
+      );
+    }
+    return;
+  }
+
+  // Navegación principal (HTML)
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put('/index.html', copy));
+          caches.open(STATIC_CACHE).then((cache) => cache.put('/index.html', copy));
           return response;
         })
         .catch(async () => {
@@ -69,13 +119,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Activos críticos locales
   if (CRITICAL_ASSETS.has(url.pathname)) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
           if (response && response.status === 200 && response.type === 'basic') {
             const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+            caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, copy));
           }
           return response;
         })
@@ -87,13 +138,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Resto de activos locales
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const networkFetch = fetch(event.request)
         .then((response) => {
           if (response && response.status === 200 && response.type === 'basic') {
             const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+            caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, copy));
           }
           return response;
         })
