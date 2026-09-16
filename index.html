@@ -42,10 +42,6 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         Ingresos
       </button>
-      <button class="nav-item" data-tab="categories">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-        Categorías
-      </button>
       <button class="nav-item" data-tab="expenses">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         Gastos
@@ -107,23 +103,13 @@
       <section class="tab-panel active" id="tab-dashboard">
         <div class="page-header">
           <div>
-            <h1>Sobres de Transición</h1>
-            <p class="muted">Gestión por fondos independientes y disciplina presupuestaria</p>
+            <h1>Sobres</h1>
+            <p class="muted">Fondos independientes organizados por banco y propósito</p>
           </div>
           <div class="header-actions">
-            <div class="total-wealth-pill" id="total-wealth-pill">
-              <span class="total-wealth-label">Patrimonio Total:</span>
-              <span class="total-wealth-val" id="total-wealth-val">₡***</span>
-              <button type="button" class="btn-eye-toggle" id="btn-toggle-total-wealth" title="Revelar o proteger patrimonio total" aria-label="Revelar o proteger patrimonio total">
-                <svg id="icon-eye-total" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-                <svg id="icon-eye-off-total" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
-                  <line x1="1" y1="1" x2="23" y2="23"/>
-                </svg>
-              </button>
+            <div class="patrimonio-pill" id="patrimonio-pill" title="Patrimonio total distribuido en sobres">
+              <span class="patrimonio-pill-label">Patrimonio Total:</span>
+              <span class="patrimonio-pill-val" id="total-wealth-val">₡0</span>
             </div>
             <button type="button" class="btn-primary" onclick="openCreateEnvelopeModal()">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -132,35 +118,23 @@
           </div>
         </div>
 
+        <!-- Interactive Segmented Wealth Bar -->
+        <div class="card patrimonio-card" id="patrimonio-card">
+          <div class="patrimonio-card-header">
+            <div class="patrimonio-card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+              <span>Distribución del Patrimonio</span>
+            </div>
+            <span class="patrimonio-card-sub" id="patrimonio-summary-text">0 sobres configurados</span>
+          </div>
+          <div class="patrimonio-bar-container" id="patrimonio-bar"></div>
+          <div class="patrimonio-legend" id="patrimonio-legend"></div>
+        </div>
+
         <!-- Envelope Cards Panel -->
         <div class="envelopes-grid" id="envelopes-grid"></div>
 
-        <!-- Charts (Per-envelope analysis without global sum) -->
-        <div class="charts-grid">
-          <div class="card">
-            <div class="card-header">
-              <h3>Gastos por sobre</h3>
-            </div>
-            <div class="chart-wrap"><canvas id="chart-categories"></canvas></div>
-          </div>
-          <div class="card">
-            <div class="card-header">
-              <h3>Fondo base vs. Gastado por sobre</h3>
-            </div>
-            <div class="chart-wrap"><canvas id="chart-balance"></canvas></div>
-          </div>
-        </div>
-
-        <!-- Summary per envelope -->
-        <div class="card">
-          <div class="card-header">
-            <h3>Estado detallado de sobres</h3>
-            <span class="badge-count" id="cat-summary-count"></span>
-          </div>
-          <div id="cat-summary-list"></div>
-        </div>
-
-        <!-- Recent transactions -->
+        <!-- Recent transactions across all envelopes -->
         <div class="card">
           <div class="card-header">
             <h3>Últimos movimientos</h3>
@@ -170,44 +144,36 @@
         </div>
       </section>
 
-      <!-- ===== SOURCES / INCOMES TAB ===== -->
+      <!-- ===== INCOMES TAB ===== -->
       <section class="tab-panel" id="tab-sources">
         <div class="page-header">
           <div>
-            <h1>Ingresos y Entradas</h1>
-            <p class="muted">Inyecta dinero nuevo directamente al sobre que elijas</p>
+            <h1>Historial de Ingresos</h1>
+            <p class="muted">Inyecciones de dinero registradas en tus sobres</p>
           </div>
           <button type="button" class="btn-primary" onclick="openIncomeModal()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nuevo ingreso
+            Inyectar ingreso
           </button>
         </div>
 
-        <div id="sources"></div>
-      </section>
-
-      <!-- ===== CATEGORIES TAB ===== -->
-      <section class="tab-panel" id="tab-categories">
-        <div class="page-header">
-          <div>
-            <h1>Categorías</h1>
-            <p class="muted">Etiquetas para clasificar y organizar tus gastos</p>
+        <div class="card">
+          <div class="card-header">
+            <h3>Todos los ingresos</h3>
+            <div class="filters">
+              <select id="filter-income-envelope"><option value="">Todos los sobres</option></select>
+            </div>
           </div>
-          <button type="button" class="btn-primary" onclick="openCategoryModal()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Nueva categoría
-          </button>
+          <div id="sources"></div>
         </div>
-
-        <div id="categories"></div>
       </section>
 
       <!-- ===== EXPENSES TAB ===== -->
       <section class="tab-panel" id="tab-expenses">
         <div class="page-header">
           <div>
-            <h1>Gastos</h1>
-            <p class="muted">Registra egresos descontando del sobre correspondiente</p>
+            <h1>Historial de Gastos</h1>
+            <p class="muted">Egresos descontados de tus sobres</p>
           </div>
           <button type="button" class="btn-primary" onclick="openExpenseModal()">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -217,10 +183,9 @@
 
         <div class="card">
           <div class="card-header">
-            <h3>Historial de gastos</h3>
+            <h3>Todos los gastos</h3>
             <div class="filters">
               <select id="filter-envelope"><option value="">Todos los sobres</option></select>
-              <select id="filter-category"><option value="">Todas las categorías</option></select>
             </div>
           </div>
           <div id="expenses-list"></div>
@@ -242,12 +207,6 @@
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         </div>
         <span>Ingresos</span>
-      </button>
-      <button class="bnav-item" data-tab="categories">
-        <div class="bnav-icon-wrap">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-        </div>
-        <span>Categorías</span>
       </button>
       <button class="bnav-item" data-tab="expenses">
         <div class="bnav-icon-wrap">
