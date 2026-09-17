@@ -51,11 +51,11 @@
 }
 
 .auth-portal-logo {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  object-fit: cover;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  border: none;
+  object-fit: contain;
 }
 
 .auth-portal-title {

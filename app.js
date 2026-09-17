@@ -3203,6 +3203,17 @@ $('calc-close').addEventListener('click', () => {
   $('calc-fab').style.display = '';
 });
 
+// Close calculator when tapping outside
+document.addEventListener('pointerdown', (e) => {
+  const panel = $('calc-panel');
+  const fab = $('calc-fab');
+  if (!panel || panel.style.display === 'none') return;
+  if (!panel.contains(e.target) && !fab.contains(e.target)) {
+    panel.style.display = 'none';
+    fab.style.display = '';
+  }
+});
+
 // Calculator button delegation
 $('calc-panel').addEventListener('click', (e) => {
   const btn = e.target.closest('.calc-btn');

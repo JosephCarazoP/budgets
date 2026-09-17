@@ -424,9 +424,9 @@ a {
 }
 
 .logo img {
-  border-radius: var(--radius-sm);
-  object-fit: cover;
-  border: 1px solid var(--border);
+  border-radius: 6px;
+  object-fit: contain;
+  border: none;
 }
 
 .sidebar-nav {
@@ -565,6 +565,65 @@ a {
   font-size: 0.8125rem;
   color: var(--text-2);
   margin-top: 0.2rem;
+}
+
+.page-header.page-header-sobres,
+.page-header-sobres {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  gap: 0.35rem !important;
+}
+
+.page-header-sobres .sobres-title-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  width: 100% !important;
+}
+
+.page-header-sobres .sobres-title-row h1 {
+  margin: 0 !important;
+  text-align: left !important;
+}
+
+.page-header-sobres .sobres-subrow {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0.75rem !important;
+  width: 100% !important;
+}
+
+.page-header-sobres .sobres-desc {
+  margin: 0 !important;
+  font-size: 0.8125rem;
+  color: var(--text-2);
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left !important;
+}
+
+.page-header-sobres .sobres-actions {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.5rem !important;
+  flex-shrink: 0 !important;
+}
+
+.btn-add-envelope {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
 }
 
 /* ============================================================
@@ -2840,7 +2899,7 @@ details[open] > summary::before {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  z-index: 499;
+  z-index: 1200;
   overflow: hidden;
   animation: tabFade 0.15s ease-out;
 }
@@ -3244,7 +3303,9 @@ details[open] > summary::before {
   .topbar .logo img {
     width: 26px;
     height: 26px;
-    border-radius: var(--radius-sm);
+    border-radius: 7px;
+    object-fit: contain;
+    border: none;
   }
 
   .topbar-actions {
@@ -3306,6 +3367,54 @@ details[open] > summary::before {
     font-size: 0.82rem;
     color: var(--text-2);
     margin-top: 0.25rem;
+  }
+
+  .page-header.page-header-sobres,
+  .page-header-sobres {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.35rem !important;
+  }
+
+  .page-header-sobres .sobres-title-row {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+  }
+
+  .page-header-sobres .sobres-title-row h1 {
+    font-size: 1.35rem !important;
+    margin: 0 !important;
+    text-align: left !important;
+  }
+
+  .page-header-sobres .sobres-subrow {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 0.5rem !important;
+    width: 100% !important;
+  }
+
+  .page-header-sobres .sobres-desc {
+    font-size: 0.75rem !important;
+    line-height: 1.25 !important;
+    margin: 0 !important;
+    text-align: left !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+  }
+
+  .page-header-sobres .sobres-actions {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 0.4rem !important;
+    flex-shrink: 0 !important;
   }
 
   .quick-add-btn {
@@ -3747,7 +3856,7 @@ details[open] > summary::before {
     width: 100%;
     border-radius: 20px 20px 0 0;
     padding-bottom: calc(1.25rem + var(--sab));
-    z-index: 250;
+    z-index: 1200;
     box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.25);
   }
 
@@ -4380,39 +4489,102 @@ details[open] > summary::before {
    ============================================================ */
 
 .compact-modal {
-  padding: 1.1rem 1.25rem !important;
+  padding: 0.95rem 1.15rem !important;
   border-radius: var(--radius-md) !important;
+  max-width: 390px !important;
 }
 
-.compact-form {
+.compact-modal .modal-info-header {
+  padding-bottom: 0.4rem !important;
+}
+
+.compact-modal .modal-info-header h3 {
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+}
+
+.compact-form,
+#expense-modal-form,
+#source-modal-form {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
-  margin-top: 0.4rem;
+  gap: 0.5rem !important;
+  margin-top: 0.35rem !important;
 }
 
-.compact-form .field {
+.compact-form .field,
+#expense-modal-form .field,
+#source-modal-form .field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.15rem !important;
 }
 
-.compact-form .field label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-2);
+.compact-form .field label,
+#expense-modal-form .field label,
+#source-modal-form .field label {
+  font-size: 0.6875rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.03em !important;
+  text-transform: uppercase !important;
+  color: var(--text-2) !important;
+  margin-bottom: 0.15rem !important;
+  line-height: 1.2 !important;
 }
 
 .compact-form input,
-.compact-form select {
-  padding: 0.45rem 0.75rem;
-  font-size: 0.835rem;
+.compact-form select,
+.compact-form .csel-trigger,
+#expense-modal-form input,
+#expense-modal-form select,
+#expense-modal-form .csel-trigger,
+#source-modal-form input,
+#source-modal-form select,
+#source-modal-form .csel-trigger {
+  height: 35px !important;
+  min-height: 35px !important;
+  padding: 0 0.65rem !important;
+  font-size: 0.8125rem !important;
+  border-radius: var(--radius-sm) !important;
+  line-height: normal !important;
 }
 
-.form-row-2 {
+.compact-form .amount-input-wrap input,
+#expense-modal-form .amount-input-wrap input,
+#source-modal-form .amount-input-wrap input {
+  height: 35px !important;
+  min-height: 35px !important;
+  padding-left: 1.55rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+}
+
+.compact-form .amount-input-wrap .currency-symbol,
+#expense-modal-form .amount-input-wrap .currency-symbol,
+#source-modal-form .amount-input-wrap .currency-symbol {
+  font-size: 0.8125rem !important;
+  left: 0.65rem !important;
+}
+
+.form-row-2,
+.compact-form .form-row-2,
+#expense-modal-form .form-row-2,
+#source-modal-form .form-row-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.65rem;
+  gap: 0.5rem !important;
+}
+
+.compact-modal .modal-actions-compact {
+  margin-top: 0.45rem !important;
+  gap: 0.5rem !important;
+}
+
+.compact-modal .modal-actions-compact button {
+  height: 34px !important;
+  min-height: 34px !important;
+  font-size: 0.8125rem !important;
+  padding: 0 0.85rem !important;
 }
 
 /* Contextual Envelope Badge */

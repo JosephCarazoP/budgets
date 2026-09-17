@@ -190,23 +190,24 @@
 
       <!-- ===== DASHBOARD TAB (SOBRES COMPACTO) ===== -->
       <section class="tab-panel active" id="tab-dashboard">
-        <div class="page-header">
-          <div>
+        <div class="page-header page-header-sobres">
+          <div class="sobres-title-row">
             <h1>Sobres</h1>
-            <p class="muted">Fondos independientes organizados por banco y propósito</p>
           </div>
-          <div class="header-actions">
-            <div class="patrimonio-pill" id="patrimonio-pill" title="Patrimonio total distribuido en sobres">
-              <span class="patrimonio-pill-label">Total:</span>
-              <span class="patrimonio-pill-val" id="total-wealth-val">₡0</span>
+          <div class="sobres-subrow">
+            <p class="muted sobres-desc">Fondos independientes organizados por banco y propósito</p>
+            <div class="sobres-actions">
+              <button type="button" class="btn-primary btn-add-envelope" onclick="openCreateEnvelopeModal()" title="Nuevo sobre">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              <div class="patrimonio-pill" id="patrimonio-pill" title="Patrimonio total distribuido en sobres">
+                <span class="patrimonio-pill-label">Total:</span>
+                <span class="patrimonio-pill-val" id="total-wealth-val">₡0</span>
+              </div>
             </div>
-            <button type="button" class="btn-primary" onclick="openCreateEnvelopeModal()">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Nuevo sobre
-            </button>
           </div>
         </div>
 
