@@ -38,6 +38,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         Sobres
       </button>
+      <button class="nav-item" data-tab="patrimonio">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+        Patrimonio
+      </button>
       <button class="nav-item" data-tab="sources">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         Ingresos
@@ -123,7 +127,7 @@
 
     <main class="content">
 
-      <!-- ===== DASHBOARD TAB ===== -->
+      <!-- ===== DASHBOARD TAB (SOBRES COMPACTO) ===== -->
       <section class="tab-panel active" id="tab-dashboard">
         <div class="page-header">
           <div>
@@ -132,7 +136,7 @@
           </div>
           <div class="header-actions">
             <div class="patrimonio-pill" id="patrimonio-pill" title="Patrimonio total distribuido en sobres">
-              <span class="patrimonio-pill-label">Patrimonio Total:</span>
+              <span class="patrimonio-pill-label">Total:</span>
               <span class="patrimonio-pill-val" id="total-wealth-val">₡0</span>
             </div>
             <button type="button" class="btn-primary" onclick="openCreateEnvelopeModal()">
@@ -142,21 +146,37 @@
           </div>
         </div>
 
+        <!-- Envelope Cards Panel (Clean & Compact) -->
+        <div class="envelopes-grid" id="envelopes-grid"></div>
+      </section>
+
+      <!-- ===== PATRIMONIO & MOVIMIENTOS TAB ===== -->
+      <section class="tab-panel" id="tab-patrimonio">
+        <div class="page-header">
+          <div>
+            <h1>Distribución del Patrimonio</h1>
+            <p class="muted">Desglose de tus fondos por sobre y actividad financiera</p>
+          </div>
+          <div class="header-actions">
+            <div class="patrimonio-pill" title="Patrimonio total distribuido en sobres">
+              <span class="patrimonio-pill-label">Total:</span>
+              <span class="patrimonio-pill-val" id="total-wealth-val-patrimonio">₡0</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Interactive Segmented Wealth Bar -->
         <div class="card patrimonio-card" id="patrimonio-card">
           <div class="patrimonio-card-header">
             <div class="patrimonio-card-title">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-              <span>Distribución del Patrimonio</span>
+              <span>Distribución por Sobres</span>
             </div>
             <span class="patrimonio-card-sub" id="patrimonio-summary-text">0 sobres configurados</span>
           </div>
           <div class="patrimonio-bar-container" id="patrimonio-bar"></div>
           <div class="patrimonio-legend" id="patrimonio-legend"></div>
         </div>
-
-        <!-- Envelope Cards Panel -->
-        <div class="envelopes-grid" id="envelopes-grid"></div>
 
         <!-- Recent transactions across all envelopes -->
         <div class="card">
@@ -168,17 +188,18 @@
         </div>
       </section>
 
+      <!-- ===== ENVELOPE DETAIL FULL-PAGE TAB ===== -->
+      <section class="tab-panel" id="tab-envelope-detail">
+        <div id="envelope-detail-page-content"></div>
+      </section>
+
       <!-- ===== INCOMES TAB ===== -->
       <section class="tab-panel" id="tab-sources">
         <div class="page-header">
           <div>
             <h1>Historial de Ingresos</h1>
-            <p class="muted">Inyecciones de dinero registradas en tus sobres</p>
+            <p class="muted">Registro de ingresos inyectados en tus sobres</p>
           </div>
-          <button type="button" class="btn-primary" onclick="openIncomeModal()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Inyectar ingreso
-          </button>
         </div>
 
         <div class="card">
@@ -197,12 +218,8 @@
         <div class="page-header">
           <div>
             <h1>Historial de Gastos</h1>
-            <p class="muted">Egresos descontados de tus sobres</p>
+            <p class="muted">Registro de egresos descontados de tus sobres</p>
           </div>
-          <button type="button" class="btn-primary" onclick="openExpenseModal()">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Registrar gasto
-          </button>
         </div>
 
         <div class="card">
@@ -222,19 +239,25 @@
     <nav class="bottom-nav" id="bottom-nav">
       <button class="bnav-item active" data-tab="dashboard">
         <div class="bnav-icon-wrap">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         </div>
         <span>Sobres</span>
       </button>
+      <button class="bnav-item" data-tab="patrimonio">
+        <div class="bnav-icon-wrap">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+        </div>
+        <span>Patrimonio</span>
+      </button>
       <button class="bnav-item" data-tab="sources">
         <div class="bnav-icon-wrap">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         </div>
         <span>Ingresos</span>
       </button>
       <button class="bnav-item" data-tab="expenses">
         <div class="bnav-icon-wrap">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
         </div>
         <span>Gastos</span>
       </button>

@@ -986,6 +986,11 @@ function renderPatrimonioBar() {
     wealthValEl.textContent = money(netTotalWealth);
   }
 
+  const wealthValPatrimonioEl = $('total-wealth-val-patrimonio');
+  if (wealthValPatrimonioEl) {
+    wealthValPatrimonioEl.textContent = money(netTotalWealth);
+  }
+
   if (summaryTextEl) {
     summaryTextEl.textContent = `${envelopes.length} ${envelopes.length === 1 ? 'sobre activo' : 'sobres activos'}`;
   }
@@ -1055,6 +1060,7 @@ function renderEnvelopeCards() {
           Crear primer sobre
         </button>
       </div>`;
+    renderPatrimonioBar();
     return;
   }
 
@@ -1100,27 +1106,41 @@ function renderEnvelopeCards() {
       </div>
     `;
   }).join('');
+
+  renderPatrimonioBar();
 }
 
 /* ============================================================
-   ENVELOPE DETAIL MODAL (VISTA DETALLADA DEL SOBRE)
+   ENVELOPE DETAIL FULL-PAGE VIEW (PÁGINA EXCLUSIVA DEL SOBRE)
    ============================================================ */
 
+let currentEnvelopeDetailId = null;
+
 window.openEnvelopeDetail = function(envId) {
+  if (!envId) return;
   const env = (state.envelopes || []).find((e) => e.id === envId);
   if (!env) return;
 
+  currentEnvelopeDetailId = envId;
   const overlay = $('modal-overlay');
-  const content = $('modal-content');
-  if (!overlay || !content) return;
+  if (overlay) overlay.style.display = 'none';
+
+  renderEnvelopeDetailPage(envId);
+  switchTab('envelope-detail');
+};
+
+function renderEnvelopeDetailPage(envId) {
+  const env = (state.envelopes || []).find((e) => e.id === envId);
+  const container = $('envelope-detail-page-content');
+  if (!env || !container) return;
 
   const t = getEnvelopeTotals(env);
-  const iconSVG = getEnvelopeIconSVG(env.icon || 'compass', env.color || '#3b82f6', 22);
+  const iconSVG = getEnvelopeIconSVG(env.icon || 'compass', env.color || '#3b82f6', 26);
 
-  // Collect movements inside this envelope
+  // Recopilar movimientos de este sobre
   const envExpenses = (state.expenses || [])
-    .filter((e) => e.envelopeId === env.id || e.envelope === env.name)
-    .map((e) => ({ ...e, type: 'expense' }));
+    .filter((e) => e.envelopeId === env.id || e.envelope === env.name || e.sourceId === env.id)
+    .map((e) => ({ ...e, type: 'expense', desc: e.desc || e.description || 'Gasto' }));
 
   const allIncomes = [...(state.incomes || [])];
   if (Array.isArray(state.sources)) {
@@ -1131,76 +1151,93 @@ window.openEnvelopeDetail = function(envId) {
 
   const envIncomes = allIncomes
     .filter((i) => (i.envelopeId === env.id || i.envelope === env.name) && (i.status === 'recibido' || !i.status))
-    .map((i) => ({ ...i, type: 'income', desc: i.name }));
+    .map((i) => ({ ...i, type: 'income', desc: i.name || 'Ingreso' }));
 
   const movements = [...envExpenses, ...envIncomes].sort(compareByDateDesc);
 
-  content.innerHTML = `
-    <div class="modal-info-content env-detail-modal" style="max-width:540px">
-      <div class="env-detail-header">
-        <div class="env-detail-header-left">
-          <div class="env-detail-icon" style="background:${env.color || '#3b82f6'}18; color:${env.color || '#3b82f6'}">
+  container.innerHTML = `
+    <div class="env-page-container">
+      <!-- Barra superior con botón de retorno y acciones del sobre -->
+      <div class="env-page-topbar">
+        <button type="button" class="env-page-back-btn" onclick="switchTab('dashboard')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>
+          Volver a Sobres
+        </button>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          <button type="button" class="btn-ghost btn-sm" onclick="openEditEnvelopeModal('${env.id}')" title="Editar sobre">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Editar
+          </button>
+          <button type="button" class="btn-danger btn-sm" onclick="openDeleteEnvelopeModal('${env.id}')" title="Eliminar sobre">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Tarjeta de Identidad del Sobre -->
+      <div class="env-page-header-card">
+        <div class="env-page-header-left">
+          <div class="env-page-icon" style="background:${env.color || '#3b82f6'}18; color:${env.color || '#3b82f6'}">
             ${iconSVG}
           </div>
-          <div class="env-detail-titles">
-            <h3 class="env-detail-name">${env.name}</h3>
+          <div class="env-page-title-group">
+            <h1>${env.name}</h1>
             <div class="env-detail-tags">
               ${env.bank ? `<span class="envelope-bank-badge">${env.bank}</span>` : ''}
+              <span class="muted" style="font-size:0.75rem">Fondo independiente</span>
             </div>
           </div>
         </div>
-        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
       </div>
 
       ${env.description ? `<div class="env-detail-desc">${env.description}</div>` : ''}
 
-      <div class="env-detail-hero-card">
-        <div class="env-detail-hero-label">Saldo Disponible</div>
-        <div class="env-detail-hero-amount ${t.available < 0 ? 'negative' : ''}">${money(t.available)}</div>
+      <!-- Tarjeta Hero de Saldo Disponible -->
+      <div class="env-page-hero-card">
+        <div class="env-page-hero-label">Saldo Disponible</div>
+        <div class="env-page-hero-amount ${t.available < 0 ? 'negative' : ''}">${money(t.available)}</div>
       </div>
 
-      <div class="env-detail-stats">
-        <div class="env-stat-card">
-          <span class="env-stat-label">Base inicial</span>
-          <span class="env-stat-val">${money(t.base)}</span>
+      <!-- Cuadrícula de Estadísticas Clave -->
+      <div class="env-page-stats">
+        <div class="env-page-stat-card">
+          <span class="env-page-stat-label">Base inicial</span>
+          <span class="env-page-stat-val">${money(t.base)}</span>
         </div>
-        <div class="env-stat-card">
-          <span class="env-stat-label">Inyectado</span>
-          <span class="env-stat-val positive">+${money(t.incomes)}</span>
+        <div class="env-page-stat-card">
+          <span class="env-page-stat-label">Inyectado</span>
+          <span class="env-page-stat-val positive">+${money(t.incomes)}</span>
         </div>
-        <div class="env-stat-card">
-          <span class="env-stat-label">Gastado</span>
-          <span class="env-stat-val negative">-${money(t.spent)}</span>
+        <div class="env-page-stat-card">
+          <span class="env-page-stat-label">Gastado</span>
+          <span class="env-page-stat-val negative">-${money(t.spent)}</span>
         </div>
       </div>
 
-      <div class="env-detail-actions">
+      <!-- Barra de Acciones Principales -->
+      <div class="env-page-actions">
         <button type="button" class="btn-primary" onclick="openIncomeModal('${env.id}')">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Inyectar ingreso
         </button>
         <button type="button" class="btn-secondary" onclick="openExpenseModal('${env.id}')">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Registrar gasto
         </button>
-        <button type="button" class="btn-ghost" onclick="openEditEnvelopeModal('${env.id}')" title="Editar sobre">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          Editar
-        </button>
-        <button type="button" class="btn-danger btn-sm" onclick="openDeleteEnvelopeModal('${env.id}')" title="Eliminar sobre">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        <button type="button" class="btn-outline" onclick="openTransferModal('${env.id}')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          Transferir
         </button>
       </div>
 
-      <div class="env-movements-section">
-        <div class="env-movements-header">
-          <span>Movimientos del sobre (${movements.length})</span>
+      <!-- Listado de Movimientos del Sobre -->
+      <div class="env-page-movements-card">
+        <div class="env-page-movements-header">
+          <h3>Movimientos de este sobre (${movements.length})</h3>
         </div>
-        <div class="env-movements-list">
+        <div class="env-page-movements-list">
           ${movements.length === 0 ? `
-            <div class="env-movements-empty">
+            <div class="env-movements-empty" style="padding:2.5rem 1rem;text-align:center;color:var(--text-3)">
               <span>No hay ingresos ni gastos registrados en este sobre aún.</span>
             </div>
           ` : movements.map((m) => {
@@ -1223,7 +1260,7 @@ window.openEnvelopeDetail = function(envId) {
                   <span class="env-movement-amount ${isInc ? 'income' : 'expense'}">
                     ${isInc ? '+' : '-'}${money(m.amount)}
                   </span>
-                  <button type="button" class="btn-ghost btn-sm" onclick="${isInc ? `deleteIncome('${m.id}')` : `deleteExpense('${m.id}')`}" title="Eliminar movimiento">
+                  <button type="button" class="btn-ghost btn-sm" onclick="${isInc ? `deleteSource('${m.id}')` : `deleteExpense('${m.id}')`}" title="Eliminar movimiento">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                   </button>
                 </div>
@@ -1234,9 +1271,131 @@ window.openEnvelopeDetail = function(envId) {
       </div>
     </div>
   `;
+}
 
+window.deleteIncome = window.deleteSource;
+
+/* ============================================================
+   TRANSFERIR ENTRE SOBRES
+   ============================================================ */
+
+window.openTransferModal = function(fromEnvId) {
+  if ((state.envelopes || []).length <= 1) {
+    toast('Necesitas al menos 2 sobres para realizar transferencias');
+    return;
+  }
+
+  const fromEnv = state.envelopes.find((e) => e.id === fromEnvId) || state.envelopes[0];
+  const otherEnvelopes = state.envelopes.filter((e) => e.id !== fromEnv.id);
+  const fromTotals = getEnvelopeTotals(fromEnv);
+
+  const overlay = $('modal-overlay');
+  const content = $('modal-content');
+  if (!overlay || !content) return;
+
+  const targetOptions = otherEnvelopes
+    .map((e) => `<option value="${e.id}">${e.name} (${e.bank || 'Sin banco'} · Disp: ${money(getEnvelopeTotals(e).available)})</option>`)
+    .join('');
+
+  content.innerHTML = `
+    <div class="modal-info-content" style="max-width:440px">
+      <div class="modal-info-header">
+        <h3>Transferir entre sobres</h3>
+        <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <form id="transfer-form" style="display:flex;flex-direction:column;gap:0.9rem;margin-top:0.5rem">
+        <div style="padding:0.75rem 0.85rem;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:0.7rem;font-weight:600;color:var(--text-3);text-transform:uppercase">Sobre Origen</div>
+            <div style="font-size:0.9rem;font-weight:600;color:var(--text)">${fromEnv.name}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:0.7rem;font-weight:600;color:var(--text-3);text-transform:uppercase">Disponible</div>
+            <div style="font-size:0.9rem;font-weight:700;color:var(--text)">${money(fromTotals.available)}</div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Sobre destino</label>
+          <select id="transfer-target-env" required>
+            ${targetOptions}
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Monto a transferir (₡)</label>
+          <input type="text" id="transfer-amount" class="amount-field" placeholder="₡0" required />
+        </div>
+
+        <div class="field">
+          <label>Nota o motivo (opcional)</label>
+          <input type="text" id="transfer-note" placeholder="Ej. Rebalanceo de fondo" />
+        </div>
+
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.5rem">
+          <button type="button" class="btn-ghost" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn-primary">Transferir fondos</button>
+        </div>
+      </form>
+    </div>
+  `;
+
+  attachFormattedInputListeners($('transfer-amount'));
   overlay.style.display = 'flex';
   overlay.onclick = (ev) => { if (ev.target === overlay) overlay.style.display = 'none'; };
+
+  $('transfer-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const amount = parseAmount($('transfer-amount').value);
+    if (!amount || amount <= 0) {
+      toast('Ingresa un monto válido mayor a 0');
+      return;
+    }
+    if (amount > fromTotals.available) {
+      if (!confirm(`El monto transferido (${money(amount)}) excede el disponible de ${fromEnv.name} (${money(fromTotals.available)}). ¿Deseas continuar?`)) {
+        return;
+      }
+    }
+
+    const targetId = $('transfer-target-env').value;
+    const targetEnv = state.envelopes.find((env) => env.id === targetId);
+    if (!targetEnv) return;
+
+    const note = $('transfer-note').value.trim();
+    const date = new Date().toISOString().slice(0, 10);
+
+    // Gasto en sobre origen
+    state.expenses.push({
+      id: uid(),
+      envelopeId: fromEnv.id,
+      envelope: fromEnv.name,
+      amount,
+      desc: note ? `Transferencia a ${targetEnv.name}: ${note}` : `Transferencia a ${targetEnv.name}`,
+      date
+    });
+
+    // Ingreso en sobre destino
+    const newInc = {
+      id: uid(),
+      name: note ? `Transferencia desde ${fromEnv.name}: ${note}` : `Transferencia desde ${fromEnv.name}`,
+      amount,
+      envelopeId: targetEnv.id,
+      date,
+      status: 'recibido'
+    };
+    state.incomes.push(newInc);
+    state.sources.push(newInc);
+
+    overlay.style.display = 'none';
+    renderAll();
+    toast(`Transferido ${money(amount)} de ${fromEnv.name} a ${targetEnv.name}`);
+    if (fromEnvId) {
+      openEnvelopeDetail(fromEnvId);
+    }
+  });
 };
 
 /* ============================================================
@@ -1608,6 +1767,8 @@ window.openDeleteEnvelopeModal = function(envId) {
 
     state.envelopes = state.envelopes.filter((e) => e.id !== envId);
     overlay.style.display = 'none';
+    currentEnvelopeDetailId = null;
+    switchTab('dashboard');
     renderAll();
     toast(`Sobre "${env.name}" eliminado`);
   });
@@ -1707,7 +1868,7 @@ function renderRecentExpenses() {
   if (!recent.length) {
     el.innerHTML = `<div class="empty-state">
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
-      <p>Sin gastos registrados</p><span>Añade tu primer gasto con el botón de registrar gasto</span></div>`;
+      <p>Sin gastos registrados</p><span>Registra gastos desde la vista detallada de cada sobre</span></div>`;
     return;
   }
 
@@ -1754,7 +1915,7 @@ function renderSources() {
   if (!allIncomes.length) {
     el.innerHTML = `<div class="empty-state" style="padding:2rem">
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      <p>Sin ingresos registrados</p><span>Inyecta tu primer ingreso asignándolo a un sobre con el botón de inyectar ingreso</span></div>`;
+      <p>Sin ingresos registrados</p><span>Inyecta ingresos directamente desde la vista detallada de cada sobre</span></div>`;
     return;
   }
 
@@ -2795,7 +2956,7 @@ function renderExpensesList() {
   if (!list.length) {
     el.innerHTML = `<div class="empty-state">
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
-      <p>Sin gastos registrados</p><span>Ajusta los filtros o registra un nuevo gasto</span></div>`;
+      <p>Sin gastos registrados</p><span>Ajusta los filtros o registra gastos desde la vista de cada sobre</span></div>`;
     return;
   }
 
@@ -2849,9 +3010,18 @@ window.deleteExpense = function(id) {
 function renderTab(tab) {
   switch (tab) {
     case 'dashboard':
-      renderPatrimonioBar();
       renderEnvelopeCards();
+      break;
+    case 'patrimonio':
+      renderPatrimonioBar();
       renderRecentExpenses();
+      break;
+    case 'envelope-detail':
+      if (currentEnvelopeDetailId) {
+        renderEnvelopeDetailPage(currentEnvelopeDetailId);
+      } else {
+        switchTab('dashboard');
+      }
       break;
     case 'sources':
       renderFilters();
