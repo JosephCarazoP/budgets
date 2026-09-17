@@ -3758,20 +3758,25 @@ details[open] > summary::before {
     bottom: 0;
     left: 0;
     right: 0;
+    width: 100%;
     height: auto;
     min-height: calc(64px + var(--sab));
     padding-bottom: var(--sab);
-    background: rgba(255, 255, 255, 0.94);
+    background: rgba(255, 255, 255, 0.96);
     border-top: 1px solid var(--border);
-    z-index: 200;
+    z-index: 1000;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
     backdrop-filter: saturate(180%) blur(20px);
     -webkit-backdrop-filter: saturate(180%) blur(20px);
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
     transition: background var(--transition), border-color var(--transition);
   }
 
   html[data-theme="dark"] .bottom-nav {
-    background: rgba(8, 8, 10, 0.94);
+    background: rgba(8, 8, 10, 0.96);
     border-top-color: rgba(255, 255, 255, 0.08);
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
   }
@@ -3866,6 +3871,11 @@ details[open] > summary::before {
   .content {
     padding-left: 0.95rem;
     padding-right: 0.95rem;
+  }
+
+  .envelopes-grid {
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
   }
 
   .kpi-grid {

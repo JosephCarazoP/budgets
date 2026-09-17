@@ -868,7 +868,8 @@ function switchTab(tab) {
   const panel = $(`tab-${tab}`);
   if (panel) panel.classList.add('active');
 
-  $$(`[data-tab="${tab}"]`).forEach((el) => el.classList.add('active'));
+  const activeNavTab = tab === 'envelope-detail' ? 'dashboard' : tab;
+  $$(`[data-tab="${activeNavTab}"]`).forEach((el) => el.classList.add('active'));
 
   renderTab(tab);
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3286,9 +3287,9 @@ function _startApp() {
   applyTheme();
   ensureEnvelopes();
   initTotalWealthToggle();
-  renderAll();
+  renderOnly();
   initCustomSelects();
-  switchTab('dashboard');
+  switchTab(currentTab || 'dashboard');
 }
 
 let _unsubscribeFirestore = null;
@@ -3344,8 +3345,10 @@ window.startOfflineGuestMode = function() {
 
   const shell = document.querySelector('.app-shell');
   const sidebar = document.getElementById('sidebar');
+  const bottomNav = document.getElementById('bottom-nav');
   if (shell) shell.style.visibility = 'visible';
   if (sidebar) sidebar.style.visibility = 'visible';
+  if (bottomNav) bottomNav.style.visibility = 'visible';
 
   _startApp();
   toast('Iniciado en Modo Local (los datos se guardan en este dispositivo)', 3200);
@@ -3354,6 +3357,7 @@ window.startOfflineGuestMode = function() {
 async function handleUserSession(user) {
   const shell = document.querySelector('.app-shell');
   const sidebar = document.getElementById('sidebar');
+  const bottomNav = document.getElementById('bottom-nav');
 
   // Si no hay usuario activo pero estamos offline, intentar restaurar sesión previa o modo local
   if (!user && !navigator.onLine) {
@@ -3389,6 +3393,7 @@ async function handleUserSession(user) {
 
     if (shell) shell.style.visibility = 'hidden';
     if (sidebar) sidebar.style.visibility = 'hidden';
+    if (bottomNav) bottomNav.style.visibility = 'hidden';
 
     if (window.Auth) {
       window.Auth.updateUserProfile(null);
@@ -3424,15 +3429,22 @@ async function handleUserSession(user) {
         localStorage.removeItem('bf_guest_mode');
       } catch (_) {}
     } else {
-      Object.assign(state, {
-        envelopes: [],
-        sources: [],
-        incomes: [],
-        expenses: [],
-        transfers: [],
-        categories: DEFAULT_CATEGORIES,
-        assignments: []
-      });
+      const legacy = localStorage.getItem('budget_state');
+      if (legacy) {
+        try {
+          Object.assign(state, JSON.parse(legacy), { editingSourceId: null });
+        } catch (_) {}
+      } else {
+        Object.assign(state, {
+          envelopes: [],
+          sources: [],
+          incomes: [],
+          expenses: [],
+          transfers: [],
+          categories: DEFAULT_CATEGORIES,
+          assignments: []
+        });
+      }
     }
   }
 
@@ -3447,19 +3459,20 @@ async function handleUserSession(user) {
   // Mostrar la interfaz inmediatamente
   if (shell) shell.style.visibility = 'visible';
   if (sidebar) sidebar.style.visibility = 'visible';
+  if (bottomNav) bottomNav.style.visibility = 'visible';
   _startApp();
 
   // PASO 2: Sincronización en segundo plano con Cloud Firestore si hay red
   if (SyncManager.isOnline && !user.isOffline && window.FBAuth) {
     (async () => {
       try {
-        if (SyncManager.pendingChanges) {
-          // Si había cambios pendientes guardados sin conexión, subirlos a la nube
-          await SyncManager.syncPending();
-        } else {
-          // Si no hay cambios locales pendientes, verificar si en Firestore hay versión más reciente
-          const remoteState = await window.FBAuth.loadUserState(user.uid, 3500);
-          if (remoteState) {
+        const remoteState = await window.FBAuth.loadUserState(user.uid, 4000);
+        if (remoteState) {
+          const remoteTime = remoteState.clientUpdatedAt || remoteState.lastModifiedAt || '';
+          const localTime = state.lastModifiedAt || '';
+
+          // Si el estado remoto es más nuevo o si no hay cambios locales pendientes no sincronizados
+          if (!SyncManager.pendingChanges || (remoteTime && remoteTime >= localTime)) {
             Object.assign(state, remoteState, { editingSourceId: null });
             ensureEnvelopes();
             if (!state.categories?.length) state.categories = DEFAULT_CATEGORIES;
@@ -3467,8 +3480,13 @@ async function handleUserSession(user) {
             reconcileAssignmentsWithDistributions();
             rebuildDistributionsFromAssignments();
             localStorage.setItem('budget_state_' + user.uid, JSON.stringify(state));
+            SyncManager._setPendingMeta(false);
             renderOnly();
+          } else if (SyncManager.pendingChanges) {
+            await SyncManager.syncPending();
           }
+        } else if (SyncManager.pendingChanges) {
+          await SyncManager.syncPending();
         }
       } catch (err) {
         console.warn('BudgetFlow: No se pudo refrescar de Firestore en segundo plano:', err);
@@ -3481,8 +3499,8 @@ async function handleUserSession(user) {
   if (window.FBAuth && !user.isOffline) {
     _unsubscribeFirestore = window.FBAuth.subscribeToUserState(user.uid, (remote, metadata) => {
       if (!remote || remote._deviceId === _deviceId) return;
-      // Si tenemos cambios pendientes locales offline, proteger nuestro trabajo local
-      if (SyncManager.pendingChanges) {
+      // Si tenemos cambios locales pendientes que son más nuevos, proteger nuestro trabajo local
+      if (SyncManager.pendingChanges && (!remote.clientUpdatedAt || remote.clientUpdatedAt < (state.lastModifiedAt || ''))) {
         console.warn('BudgetFlow: Se omitió actualización remota para proteger cambios locales pendientes.');
         return;
       }

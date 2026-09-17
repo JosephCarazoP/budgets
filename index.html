@@ -235,35 +235,35 @@
 
     </main>
 
-    <!-- BOTTOM NAV (mobile) -->
-    <nav class="bottom-nav" id="bottom-nav">
-      <button class="bnav-item active" data-tab="dashboard">
-        <div class="bnav-icon-wrap">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        </div>
-        <span>Sobres</span>
-      </button>
-      <button class="bnav-item" data-tab="patrimonio">
-        <div class="bnav-icon-wrap">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
-        </div>
-        <span>Patrimonio</span>
-      </button>
-      <button class="bnav-item" data-tab="sources">
-        <div class="bnav-icon-wrap">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-        </div>
-        <span>Ingresos</span>
-      </button>
-      <button class="bnav-item" data-tab="expenses">
-        <div class="bnav-icon-wrap">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
-        </div>
-        <span>Gastos</span>
-      </button>
-    </nav>
-
   </div>
+
+  <!-- BOTTOM NAV (mobile) -->
+  <nav class="bottom-nav" id="bottom-nav" style="visibility:hidden">
+    <button class="bnav-item active" data-tab="dashboard">
+      <div class="bnav-icon-wrap">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      </div>
+      <span>Sobres</span>
+    </button>
+    <button class="bnav-item" data-tab="patrimonio">
+      <div class="bnav-icon-wrap">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+      </div>
+      <span>Patrimonio</span>
+    </button>
+    <button class="bnav-item" data-tab="sources">
+      <div class="bnav-icon-wrap">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      </div>
+      <span>Ingresos</span>
+    </button>
+    <button class="bnav-item" data-tab="expenses">
+      <div class="bnav-icon-wrap">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+      </div>
+      <span>Gastos</span>
+    </button>
+  </nav>
 
   <!-- TOAST -->
   <div id="toast" class="toast"></div>
