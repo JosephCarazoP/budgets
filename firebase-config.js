@@ -37,7 +37,8 @@ let firestoreDb = null;
 let firebaseAuth = null;
 
 const FBAuth = {
-  currentUser: null,
+  currentUser: undefined,
+  _authReady: false,
   _listeners: [],
 
   isConfigured() {
@@ -93,19 +94,44 @@ const FBAuth = {
 
       firebaseAuth = firebase.auth();
 
-      // Escuchar cambios de autenticación
-      firebaseAuth.onAuthStateChanged((user) => {
-        FBAuth.currentUser = user;
-        if (user) {
-          try {
-            localStorage.setItem('bf_last_user', JSON.stringify({
-              uid: user.uid,
-              displayName: user.displayName || user.email?.split('@')[0] || 'Usuario',
-              email: user.email || ''
-            }));
-          } catch (_) {}
-        }
-        FBAuth._notify(user);
+      // Esperar a que Firebase determine el estado de autenticación inicial
+      // para evitar que el portal de login parpadee en pantalla si el usuario ya tiene sesión activa.
+      await new Promise((resolve) => {
+        let initialFired = false;
+        const fallbackTimer = setTimeout(() => {
+          if (!initialFired) {
+            initialFired = true;
+            if (FBAuth.currentUser === undefined) FBAuth.currentUser = null;
+            FBAuth._authReady = true;
+            resolve();
+          }
+        }, 3000);
+
+        firebaseAuth.onAuthStateChanged((user) => {
+          FBAuth.currentUser = user;
+          FBAuth._authReady = true;
+          if (user) {
+            try {
+              localStorage.setItem('bf_last_user', JSON.stringify({
+                uid: user.uid,
+                displayName: user.displayName || user.email?.split('@')[0] || 'Usuario',
+                email: user.email || ''
+              }));
+            } catch (_) {}
+          } else if (initialFired) {
+            try {
+              localStorage.removeItem('bf_last_user');
+            } catch (_) {}
+          }
+
+          if (!initialFired) {
+            initialFired = true;
+            clearTimeout(fallbackTimer);
+            resolve();
+          } else {
+            FBAuth._notify(user);
+          }
+        });
       });
 
       return true;

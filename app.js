@@ -39,7 +39,33 @@ const INITIAL = {
   editingCategoryName: null
 };
 
-const state = { ...INITIAL, ...JSON.parse(localStorage.getItem('budget_state') || '{}') };
+let _initialCached = null;
+try {
+  const lastUserRaw = localStorage.getItem('bf_last_user');
+  if (lastUserRaw) {
+    const lastUser = JSON.parse(lastUserRaw);
+    if (lastUser?.uid) {
+      const uCache = localStorage.getItem('budget_state_' + lastUser.uid);
+      if (uCache) _initialCached = JSON.parse(uCache);
+    }
+  }
+} catch (_) {}
+
+if (!_initialCached) {
+  try {
+    const localGuest = localStorage.getItem('budget_state_local');
+    if (localGuest) _initialCached = JSON.parse(localGuest);
+  } catch (_) {}
+}
+
+if (!_initialCached) {
+  try {
+    const legacy = localStorage.getItem('budget_state');
+    if (legacy) _initialCached = JSON.parse(legacy);
+  } catch (_) {}
+}
+
+const state = { ...INITIAL, ...(_initialCached || {}) };
 
 function ensureEnvelopes() {
   if (!Array.isArray(state.envelopes)) {
@@ -3286,7 +3312,6 @@ function _startApp() {
   if (srcDateEl) srcDateEl.valueAsDate = new Date();
   applyTheme();
   ensureEnvelopes();
-  initTotalWealthToggle();
   renderOnly();
   initCustomSelects();
   switchTab(currentTab || 'dashboard');
