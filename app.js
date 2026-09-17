@@ -1162,7 +1162,7 @@ function renderEnvelopeDetailPage(envId) {
   if (!env || !container) return;
 
   const t = getEnvelopeTotals(env);
-  const iconSVG = getEnvelopeIconSVG(env.icon || 'compass', env.color || '#3b82f6', 26);
+  const iconSVG = getEnvelopeIconSVG(env.icon || 'compass', env.color || '#3b82f6', 22);
 
   // Recopilar movimientos de este sobre
   const envExpenses = (state.expenses || [])
@@ -1184,87 +1184,86 @@ function renderEnvelopeDetailPage(envId) {
 
   container.innerHTML = `
     <div class="env-page-container">
-      <!-- Barra superior con botón de retorno y acciones del sobre -->
+      <!-- Barra superior compacta con botón de retorno y acciones del sobre -->
       <div class="env-page-topbar">
         <button type="button" class="env-page-back-btn" onclick="switchTab('dashboard')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>
-          Volver a Sobres
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="15 18 9 12 15 6"/></svg>
+          Sobres
         </button>
-        <div style="display:flex;gap:0.5rem;align-items:center;">
+        <div class="env-topbar-actions">
           <button type="button" class="btn-ghost btn-sm" onclick="openEditEnvelopeModal('${env.id}')" title="Editar sobre">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             Editar
           </button>
           <button type="button" class="btn-danger btn-sm" onclick="openDeleteEnvelopeModal('${env.id}')" title="Eliminar sobre">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Eliminar
           </button>
         </div>
       </div>
 
-      <!-- Tarjeta de Identidad del Sobre -->
-      <div class="env-page-header-card">
-        <div class="env-page-header-left">
-          <div class="env-page-icon" style="background:${env.color || '#3b82f6'}18; color:${env.color || '#3b82f6'}">
-            ${iconSVG}
-          </div>
-          <div class="env-page-title-group">
-            <h1>${env.name}</h1>
-            <div class="env-detail-tags">
-              ${env.bank ? `<span class="envelope-bank-badge">${env.bank}</span>` : ''}
-              <span class="muted" style="font-size:0.75rem">Fondo independiente</span>
+      <!-- Tarjeta Hero Compacta y Unificada -->
+      <div class="env-compact-card">
+        <div class="env-compact-header">
+          <div class="env-compact-identity">
+            <div class="env-compact-icon" style="background:${env.color || '#3b82f6'}18; color:${env.color || '#3b82f6'}">
+              ${iconSVG}
+            </div>
+            <div class="env-compact-info">
+              <div class="env-compact-name-row">
+                <h2>${env.name}</h2>
+                ${env.bank ? `<span class="envelope-bank-badge">${env.bank}</span>` : ''}
+              </div>
+              ${env.description ? `<div class="env-compact-desc">${env.description}</div>` : ''}
             </div>
           </div>
+          <div class="env-compact-balance-wrap">
+            <span class="env-compact-balance-label">Disponible</span>
+            <span class="env-compact-balance-amount ${t.available < 0 ? 'negative' : ''}">${money(t.available)}</span>
+          </div>
         </div>
-      </div>
 
-      ${env.description ? `<div class="env-detail-desc">${env.description}</div>` : ''}
-
-      <!-- Tarjeta Hero de Saldo Disponible -->
-      <div class="env-page-hero-card">
-        <div class="env-page-hero-label">Saldo Disponible</div>
-        <div class="env-page-hero-amount ${t.available < 0 ? 'negative' : ''}">${money(t.available)}</div>
-      </div>
-
-      <!-- Cuadrícula de Estadísticas Clave -->
-      <div class="env-page-stats">
-        <div class="env-page-stat-card">
-          <span class="env-page-stat-label">Base inicial</span>
-          <span class="env-page-stat-val">${money(t.base)}</span>
+        <!-- Tira métrica compacta -->
+        <div class="env-compact-metrics-strip">
+          <div class="env-metric-item">
+            <span class="env-metric-label">Base inicial</span>
+            <span class="env-metric-val">${money(t.base)}</span>
+          </div>
+          <div class="env-metric-item">
+            <span class="env-metric-label">Inyectado</span>
+            <span class="env-metric-val positive">+${money(t.incomes)}</span>
+          </div>
+          <div class="env-metric-item">
+            <span class="env-metric-label">Gastado</span>
+            <span class="env-metric-val negative">-${money(t.spent)}</span>
+          </div>
         </div>
-        <div class="env-page-stat-card">
-          <span class="env-page-stat-label">Inyectado</span>
-          <span class="env-page-stat-val positive">+${money(t.incomes)}</span>
-        </div>
-        <div class="env-page-stat-card">
-          <span class="env-page-stat-label">Gastado</span>
-          <span class="env-page-stat-val negative">-${money(t.spent)}</span>
-        </div>
-      </div>
 
-      <!-- Barra de Acciones Principales -->
-      <div class="env-page-actions">
-        <button type="button" class="btn-primary" onclick="openIncomeModal('${env.id}')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Inyectar ingreso
-        </button>
-        <button type="button" class="btn-secondary" onclick="openExpenseModal('${env.id}')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Registrar gasto
-        </button>
-        <button type="button" class="btn-outline" onclick="openTransferModal('${env.id}')">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-          Transferir
-        </button>
+        <!-- Botones de Acción integrados -->
+        <div class="env-compact-actions">
+          <button type="button" class="btn-primary btn-sm" onclick="openIncomeModal('${env.id}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Inyectar ingreso
+          </button>
+          <button type="button" class="btn-secondary btn-sm" onclick="openExpenseModal('${env.id}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Registrar gasto
+          </button>
+          <button type="button" class="btn-outline btn-sm" onclick="openTransferModal('${env.id}')">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            Transferir
+          </button>
+        </div>
       </div>
 
       <!-- Listado de Movimientos del Sobre -->
       <div class="env-page-movements-card">
         <div class="env-page-movements-header">
-          <h3>Movimientos de este sobre (${movements.length})</h3>
+          <h3>Movimientos (${movements.length})</h3>
         </div>
         <div class="env-page-movements-list">
           ${movements.length === 0 ? `
-            <div class="env-movements-empty" style="padding:2.5rem 1rem;text-align:center;color:var(--text-3)">
+            <div class="env-movements-empty" style="padding:2rem 1rem;text-align:center;color:var(--text-3)">
               <span>No hay ingresos ni gastos registrados en este sobre aún.</span>
             </div>
           ` : movements.map((m) => {
@@ -1274,8 +1273,8 @@ function renderEnvelopeDetailPage(envId) {
                 <div class="env-movement-left">
                   <div class="env-movement-type-badge ${isInc ? 'income' : 'expense'}">
                     ${isInc 
-                      ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
-                      : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>`
+                      ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
+                      : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>`
                     }
                   </div>
                   <div class="env-movement-info">
@@ -1300,6 +1299,7 @@ function renderEnvelopeDetailPage(envId) {
   `;
 }
 
+window.renderEnvelopeDetailPage = renderEnvelopeDetailPage;
 window.deleteIncome = window.deleteSource;
 
 /* ============================================================
@@ -1325,7 +1325,7 @@ window.openTransferModal = function(fromEnvId) {
     .join('');
 
   content.innerHTML = `
-    <div class="modal-info-content" style="max-width:440px">
+    <div class="modal-info-content compact-modal" style="max-width:400px">
       <div class="modal-info-header">
         <h3>Transferir entre sobres</h3>
         <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">
@@ -1333,20 +1333,20 @@ window.openTransferModal = function(fromEnvId) {
         </button>
       </div>
 
-      <form id="transfer-form" style="display:flex;flex-direction:column;gap:0.9rem;margin-top:0.5rem">
-        <div style="padding:0.75rem 0.85rem;background:var(--bg-alt);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;align-items:center">
+      <form id="transfer-form" class="compact-form">
+        <div class="transfer-origin-pill">
           <div>
-            <div style="font-size:0.7rem;font-weight:600;color:var(--text-3);text-transform:uppercase">Sobre Origen</div>
-            <div style="font-size:0.9rem;font-weight:600;color:var(--text)">${fromEnv.name}</div>
+            <div class="pill-label">Sobre Origen</div>
+            <div class="pill-val">${fromEnv.name}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:0.7rem;font-weight:600;color:var(--text-3);text-transform:uppercase">Disponible</div>
-            <div style="font-size:0.9rem;font-weight:700;color:var(--text)">${money(fromTotals.available)}</div>
+            <div class="pill-label">Disponible</div>
+            <div class="pill-val">${money(fromTotals.available)}</div>
           </div>
         </div>
 
         <div class="field">
-          <label>Sobre destino</label>
+          <label>Hacia sobre destino</label>
           <select id="transfer-target-env" required>
             ${targetOptions}
           </select>
@@ -1354,7 +1354,10 @@ window.openTransferModal = function(fromEnvId) {
 
         <div class="field">
           <label>Monto a transferir (₡)</label>
-          <input type="text" id="transfer-amount" class="amount-field" placeholder="₡0" required />
+          <div class="amount-input-wrap">
+            <span class="currency-symbol">₡</span>
+            <input type="text" id="transfer-amount" inputmode="decimal" placeholder="0.00" required />
+          </div>
         </div>
 
         <div class="field">
@@ -1362,15 +1365,15 @@ window.openTransferModal = function(fromEnvId) {
           <input type="text" id="transfer-note" placeholder="Ej. Rebalanceo de fondo" />
         </div>
 
-        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.5rem">
-          <button type="button" class="btn-ghost" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
-          <button type="submit" class="btn-primary">Transferir fondos</button>
+        <div class="modal-actions-compact">
+          <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn-primary btn-sm">Transferir fondos</button>
         </div>
       </form>
     </div>
   `;
 
-  attachFormattedInputListeners($('transfer-amount'));
+  attachAmountFormatter($('transfer-amount'));
   overlay.style.display = 'flex';
   overlay.onclick = (ev) => { if (ev.target === overlay) overlay.style.display = 'none'; };
 
@@ -1413,14 +1416,16 @@ window.openTransferModal = function(fromEnvId) {
       date,
       status: 'recibido'
     };
+    if (!Array.isArray(state.incomes)) state.incomes = [];
+    if (!Array.isArray(state.sources)) state.sources = [];
     state.incomes.push(newInc);
     state.sources.push(newInc);
 
     overlay.style.display = 'none';
     renderAll();
     toast(`Transferido ${money(amount)} de ${fromEnv.name} a ${targetEnv.name}`);
-    if (fromEnvId) {
-      openEnvelopeDetail(fromEnvId);
+    if (fromEnvId && currentEnvelopeDetailId === fromEnvId) {
+      renderEnvelopeDetailPage(fromEnvId);
     }
   });
 };
@@ -1442,7 +1447,7 @@ window.openCreateEnvelopeModal = function() {
   let selectedIcon = 'compass';
 
   content.innerHTML = `
-    <div class="modal-info-content" style="max-width:440px">
+    <div class="modal-info-content compact-modal" style="max-width:440px">
       <div class="modal-info-header">
         <h3>Nuevo sobre</h3>
         <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">
@@ -1450,56 +1455,60 @@ window.openCreateEnvelopeModal = function() {
         </button>
       </div>
 
-      <form id="create-env-form" style="display:flex;flex-direction:column;gap:0.95rem;margin-top:0.5rem">
+      <form id="create-env-form" class="compact-form">
         <div class="field">
           <label>Nombre del sobre</label>
-          <input id="modal-env-name" placeholder="Ej. Pista de Vida, Fondo Mecánico, Ahorro..." required />
+          <input id="modal-env-name" placeholder="Ej. Fondo Mecánico, Ahorro..." required />
         </div>
 
-        <div class="field">
-          <label>Banco de origen (¿De qué banco viene esa plata?)</label>
-          <select id="modal-env-bank">
-            ${PRESET_BANKS.map((b) => `<option value="${b}">${b}</option>`).join('')}
-          </select>
-          <input id="modal-env-custom-bank" placeholder="Escribe el nombre del banco..." style="display:none;margin-top:0.4rem" />
-        </div>
+        <div class="form-row-2">
+          <div class="field">
+            <label>Banco</label>
+            <select id="modal-env-bank">
+              ${PRESET_BANKS.map((b) => `<option value="${b}">${b}</option>`).join('')}
+            </select>
+            <input id="modal-env-custom-bank" placeholder="Nombre del banco..." style="display:none;margin-top:0.35rem" />
+          </div>
 
-        <div class="field">
-          <label>Propósito (¿De qué es esa plata?)</label>
-          <input id="modal-env-desc" placeholder="Ej. Gastos fijos de subsistencia, reparaciones imprevistas..." />
-        </div>
-
-        <div class="field">
-          <label>Fondo base inicial (₡)</label>
-          <div class="amount-input-wrap">
-            <span class="currency-symbol">₡</span>
-            <input id="modal-env-base" type="text" inputmode="decimal" placeholder="0.00" required />
+          <div class="field">
+            <label>Fondo base inicial (₡)</label>
+            <div class="amount-input-wrap">
+              <span class="currency-symbol">₡</span>
+              <input id="modal-env-base" type="text" inputmode="decimal" placeholder="0.00" required />
+            </div>
           </div>
         </div>
 
         <div class="field">
-          <label>Icono del sobre</label>
-          <div class="icon-picker-grid" id="create-env-icon-grid">
-            ${AVAILABLE_ENVELOPE_ICONS.map((ic) => `
-              <div class="icon-picker-item ${ic === selectedIcon ? 'selected' : ''}" data-icon="${ic}">
-                ${getEnvelopeIconSVG(ic, 'currentColor', 18)}
-              </div>
-            `).join('')}
+          <label>Propósito (opcional)</label>
+          <input id="modal-env-desc" placeholder="Ej. Gastos fijos, reparaciones imprevistas..." />
+        </div>
+
+        <div class="form-row-2 compact-pickers-row">
+          <div class="field">
+            <label>Icono</label>
+            <div class="icon-picker-grid compact-picker" id="create-env-icon-grid">
+              ${AVAILABLE_ENVELOPE_ICONS.map((ic) => `
+                <div class="icon-picker-item ${ic === selectedIcon ? 'selected' : ''}" data-icon="${ic}">
+                  ${getEnvelopeIconSVG(ic, 'currentColor', 16)}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Color</label>
+            <div class="color-picker-grid compact-picker" id="env-color-grid">
+              ${PRESET_ENVELOPE_COLORS.map((c) => `
+                <div class="color-swatch ${c === selectedColor ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>
+              `).join('')}
+            </div>
           </div>
         </div>
 
-        <div class="field">
-          <label>Color representativo</label>
-          <div class="color-picker-grid" id="env-color-grid">
-            ${PRESET_ENVELOPE_COLORS.map((c) => `
-              <div class="color-swatch ${c === selectedColor ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>
-            `).join('')}
-          </div>
-        </div>
-
-        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.4rem">
-          <button type="button" class="btn-ghost" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
-          <button type="submit" class="btn-primary">Crear sobre</button>
+        <div class="modal-actions-compact">
+          <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn-primary btn-sm">Crear sobre</button>
         </div>
       </form>
     </div>
@@ -1585,7 +1594,7 @@ window.openEditEnvelopeModal = function(envId) {
   const isCustomBank = env.bank && !PRESET_BANKS.includes(env.bank);
 
   content.innerHTML = `
-    <div class="modal-info-content" style="max-width:440px">
+    <div class="modal-info-content compact-modal" style="max-width:440px">
       <div class="modal-info-header">
         <h3>Editar sobre</h3>
         <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">
@@ -1593,56 +1602,60 @@ window.openEditEnvelopeModal = function(envId) {
         </button>
       </div>
 
-      <form id="edit-env-form" style="display:flex;flex-direction:column;gap:0.95rem;margin-top:0.5rem">
+      <form id="edit-env-form" class="compact-form">
         <div class="field">
           <label>Nombre del sobre</label>
           <input id="modal-edit-env-name" value="${env.name}" required />
         </div>
 
-        <div class="field">
-          <label>Banco de origen (¿De qué banco viene esa plata?)</label>
-          <select id="modal-edit-env-bank">
-            ${PRESET_BANKS.map((b) => `<option value="${b}" ${(b === env.bank || (b === 'Otro' && isCustomBank)) ? 'selected' : ''}>${b}</option>`).join('')}
-          </select>
-          <input id="modal-edit-env-custom-bank" value="${isCustomBank ? env.bank : ''}" placeholder="Escribe el nombre del banco..." style="${isCustomBank ? 'display:block;' : 'display:none;'}margin-top:0.4rem" />
-        </div>
+        <div class="form-row-2">
+          <div class="field">
+            <label>Banco</label>
+            <select id="modal-edit-env-bank">
+              ${PRESET_BANKS.map((b) => `<option value="${b}" ${(b === env.bank || (b === 'Otro' && isCustomBank)) ? 'selected' : ''}>${b}</option>`).join('')}
+            </select>
+            <input id="modal-edit-env-custom-bank" value="${isCustomBank ? env.bank : ''}" placeholder="Nombre del banco..." style="${isCustomBank ? 'display:block;' : 'display:none;'}margin-top:0.35rem" />
+          </div>
 
-        <div class="field">
-          <label>Propósito (¿De qué es esa plata?)</label>
-          <input id="modal-edit-env-desc" value="${env.description || ''}" placeholder="Ej. Gastos fijos de subsistencia, taller mecánico..." />
-        </div>
-
-        <div class="field">
-          <label>Fondo base inicial (₡)</label>
-          <div class="amount-input-wrap">
-            <span class="currency-symbol">₡</span>
-            <input id="modal-edit-env-base" type="text" inputmode="decimal" value="${formatAmountString(env.baseAmount)}" required />
+          <div class="field">
+            <label>Fondo base (₡)</label>
+            <div class="amount-input-wrap">
+              <span class="currency-symbol">₡</span>
+              <input id="modal-edit-env-base" type="text" inputmode="decimal" value="${formatAmountString(env.baseAmount)}" required />
+            </div>
           </div>
         </div>
 
         <div class="field">
-          <label>Icono del sobre</label>
-          <div class="icon-picker-grid" id="edit-env-icon-grid">
-            ${AVAILABLE_ENVELOPE_ICONS.map((ic) => `
-              <div class="icon-picker-item ${ic === selectedIcon ? 'selected' : ''}" data-icon="${ic}">
-                ${getEnvelopeIconSVG(ic, 'currentColor', 18)}
-              </div>
-            `).join('')}
+          <label>Propósito (opcional)</label>
+          <input id="modal-edit-env-desc" value="${env.description || ''}" placeholder="Ej. Gastos fijos, reparaciones..." />
+        </div>
+
+        <div class="form-row-2 compact-pickers-row">
+          <div class="field">
+            <label>Icono</label>
+            <div class="icon-picker-grid compact-picker" id="edit-env-icon-grid">
+              ${AVAILABLE_ENVELOPE_ICONS.map((ic) => `
+                <div class="icon-picker-item ${ic === selectedIcon ? 'selected' : ''}" data-icon="${ic}">
+                  ${getEnvelopeIconSVG(ic, 'currentColor', 16)}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Color</label>
+            <div class="color-picker-grid compact-picker" id="edit-env-color-grid">
+              ${PRESET_ENVELOPE_COLORS.map((c) => `
+                <div class="color-swatch ${c.toLowerCase() === selectedColor.toLowerCase() ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>
+              `).join('')}
+            </div>
           </div>
         </div>
 
-        <div class="field">
-          <label>Color representativo</label>
-          <div class="color-picker-grid" id="edit-env-color-grid">
-            ${PRESET_ENVELOPE_COLORS.map((c) => `
-              <div class="color-swatch ${c.toLowerCase() === selectedColor.toLowerCase() ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>
-            `).join('')}
-          </div>
-        </div>
-
-        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.4rem">
-          <button type="button" class="btn-ghost" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
-          <button type="submit" class="btn-primary">Guardar cambios</button>
+        <div class="modal-actions-compact">
+          <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn-primary btn-sm">Guardar cambios</button>
         </div>
       </form>
     </div>
@@ -2024,9 +2037,16 @@ window.openIncomeModal = window.openSourceModal = function(envIdOrIncomeId = nul
     }
   }
 
+  // Si estamos en la vista de detalle de sobre y no se pasó envId explícito, usar el sobre actual
+  if (!preselectedEnvId && currentTab === 'envelope-detail' && currentEnvelopeDetailId) {
+    preselectedEnvId = currentEnvelopeDetailId;
+  }
+
   const isEdit = !!incomeId;
   const s = isEdit ? (state.incomes || state.sources || []).find((x) => x.id === incomeId) : null;
   const targetEnvId = s ? (s.envelopeId || s.envelope) : (preselectedEnvId || state.envelopes[0]?.id || '');
+  const targetEnv = (state.envelopes || []).find((e) => e.id === targetEnvId);
+  const isContextual = !!targetEnv && (!!preselectedEnvId || currentTab === 'envelope-detail');
 
   const overlay = $('modal-overlay');
   const content = $('modal-content');
@@ -2038,63 +2058,67 @@ window.openIncomeModal = window.openSourceModal = function(envIdOrIncomeId = nul
   }).join('');
 
   content.innerHTML = `
-    <div class="modal-info-content" style="max-width:440px">
+    <div class="modal-info-content compact-modal" style="max-width:420px">
       <div class="modal-info-header">
-        <h3>${isEdit ? 'Editar ingreso' : 'Inyectar ingreso al sobre'}</h3>
+        <h3>${isEdit ? 'Editar ingreso' : 'Inyectar ingreso'}</h3>
         <button type="button" class="btn-ghost btn-sm" id="source-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
 
-      <form id="source-modal-form" style="display:flex;flex-direction:column;gap:0.95rem;margin-top:0.5rem">
-        <div class="field">
-          <label class="field-label-step">
-            <span class="step-num">1</span>
-            CONCEPTO O FUENTE (¿DE DÓNDE VIENE ESTA PLATA?)
-          </label>
-          <input id="modal-src-name" placeholder="Ej. Beca INA, Salario quincenal, Trabajo extra..." value="${s ? s.name : ''}" required />
-        </div>
+      <form id="source-modal-form" class="compact-form">
+        ${isContextual ? `
+          <div class="context-env-badge" style="border-left-color:${targetEnv.color || '#3b82f6'}">
+            <div class="context-env-left">
+              <span class="context-dot" style="background:${targetEnv.color || '#3b82f6'}"></span>
+              <span class="context-env-name">Sobre: <b>${targetEnv.name}</b></span>
+              ${targetEnv.bank ? `<span class="context-env-bank">${targetEnv.bank}</span>` : ''}
+            </div>
+            <span class="context-env-disp">Disp: <b>${money(getEnvelopeTotals(targetEnv).available)}</b></span>
+          </div>
+          <input type="hidden" id="modal-src-envelope" value="${targetEnv.id}" />
+        ` : `
+          <div class="field">
+            <label>Sobre destino</label>
+            <select id="modal-src-envelope" required>
+              ${envOpts}
+            </select>
+          </div>
+        `}
 
         <div class="field">
-          <label class="field-label-step">
-            <span class="step-num">2</span>
-            MONTO A INYECTAR (₡)
-          </label>
-          <div class="amount-input-wrap">
-            <span class="currency-symbol">₡</span>
-            <input id="modal-src-amount" type="text" inputmode="decimal" placeholder="0.00" value="${s ? formatAmountString(s.amount) : ''}" required />
+          <label>Concepto / Fuente</label>
+          <input id="modal-src-name" placeholder="Ej. Beca, Salario quincenal, Trabajo extra..." value="${s ? s.name : ''}" required />
+        </div>
+
+        <div class="form-row-2">
+          <div class="field">
+            <label>Monto a inyectar (₡)</label>
+            <div class="amount-input-wrap">
+              <span class="currency-symbol">₡</span>
+              <input id="modal-src-amount" type="text" inputmode="decimal" placeholder="0.00" value="${s ? formatAmountString(s.amount) : ''}" required />
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Fecha</label>
+            <input id="modal-src-date" type="date" value="${s ? s.date : todayStr}" required />
           </div>
         </div>
 
-        <div class="field">
-          <label class="field-label-step">
-            <span class="step-num">3</span>
-            SOBRE DESTINO DE LA INYECCIÓN
-          </label>
-          <select id="modal-src-envelope" required>
-            ${envOpts}
-          </select>
-        </div>
+        <div id="modal-src-sim-box" class="expense-sim-box compact-sim" style="display:none"></div>
 
-        <div class="field">
-          <label class="field-label-step">
-            <span class="step-num">4</span>
-            FECHA
-          </label>
-          <input id="modal-src-date" type="date" value="${s ? s.date : todayStr}" required />
-        </div>
-
-        <div id="modal-src-sim-box" class="expense-sim-box" style="display:none"></div>
-
-        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.5rem">
-          <button type="button" class="btn-ghost" id="source-modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
-          <button type="submit" class="btn-primary">${isEdit ? 'Actualizar ingreso' : 'Inyectar al sobre'}</button>
+        <div class="modal-actions-compact">
+          <button type="button" class="btn-ghost btn-sm" id="source-modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn-primary btn-sm">${isEdit ? 'Actualizar' : 'Inyectar ingreso'}</button>
         </div>
       </form>
     </div>
   `;
 
-  _buildCsel('modal-src-envelope', {});
+  if (!isContextual) {
+    _buildCsel('modal-src-envelope', {});
+  }
   attachAmountFormatter($('modal-src-amount'));
 
   const envSelect = $('modal-src-envelope');
@@ -2119,11 +2143,11 @@ window.openIncomeModal = window.openSourceModal = function(envIdOrIncomeId = nul
     simBox.style.display = 'flex';
     simBox.innerHTML = `
       <div class="sim-row">
-        <span style="color:var(--text-2)">Disponible actual en <b>${env.name}</b>:</span>
-        <span>${money(currentAvailable)}</span>
+        <span style="color:var(--text-2)">Disponible actual:</span>
+        <span style="font-weight:600">${money(currentAvailable)}</span>
       </div>
       <div class="sim-row">
-        <span style="font-weight:600;color:var(--text)">Nuevo saldo disponible:</span>
+        <span style="font-weight:600;color:var(--text)">Nuevo saldo resultante:</span>
         <div class="sim-calc-flow">
           <span>${money(currentAvailable)}</span>
           <span class="arrow">+ ${money(amount)} →</span>
@@ -2133,10 +2157,12 @@ window.openIncomeModal = window.openSourceModal = function(envIdOrIncomeId = nul
     `;
   }
 
-  envSelect.addEventListener('change', () => {
-    _refreshCsel('modal-src-envelope');
-    updateIncomeSimulation();
-  });
+  if (!isContextual && envSelect && envSelect.tagName === 'SELECT') {
+    envSelect.addEventListener('change', () => {
+      _refreshCsel('modal-src-envelope');
+      updateIncomeSimulation();
+    });
+  }
   amountInput.addEventListener('input', updateIncomeSimulation);
   updateIncomeSimulation();
 
@@ -2180,8 +2206,9 @@ window.openIncomeModal = window.openSourceModal = function(envIdOrIncomeId = nul
 
     overlay.style.display = 'none';
     renderAll();
-    if (preselectedEnvId) {
-      openEnvelopeDetail(preselectedEnvId);
+    const finalEnvId = preselectedEnvId || (currentTab === 'envelope-detail' ? currentEnvelopeDetailId : null);
+    if (finalEnvId) {
+      renderEnvelopeDetailPage(finalEnvId);
     }
   });
 };
@@ -2764,6 +2791,11 @@ window.openExpenseModal = function(envIdOrExpenseId = null, maybeExpenseId = nul
     }
   }
 
+  // Si estamos en la vista de detalle de sobre y no se pasó envId explícito, usar el sobre actual
+  if (!preselectedEnvId && currentTab === 'envelope-detail' && currentEnvelopeDetailId) {
+    preselectedEnvId = currentEnvelopeDetailId;
+  }
+
   const isEdit = !!expenseId;
   const ex = isEdit ? (state.expenses || []).find((x) => x.id === expenseId) : null;
 
@@ -2773,6 +2805,8 @@ window.openExpenseModal = function(envIdOrExpenseId = null, maybeExpenseId = nul
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const initialEnvId = ex ? (ex.envelopeId || ex.sourceId || state.envelopes[0].id) : (preselectedEnvId || state.envelopes[0].id);
+  const targetEnv = (state.envelopes || []).find((e) => e.id === initialEnvId);
+  const isContextual = !!targetEnv && (!!preselectedEnvId || currentTab === 'envelope-detail');
 
   const envOpts = state.envelopes.map((env) => {
     const t = getEnvelopeTotals(env);
@@ -2781,7 +2815,7 @@ window.openExpenseModal = function(envIdOrExpenseId = null, maybeExpenseId = nul
   }).join('');
 
   content.innerHTML = `
-    <div class="modal-info-content" style="max-width:460px">
+    <div class="modal-info-content compact-modal" style="max-width:420px">
       <div class="modal-info-header">
         <h3>${isEdit ? 'Editar gasto' : 'Registrar gasto'}</h3>
         <button type="button" class="btn-ghost btn-sm" id="expense-modal-close" onclick="document.getElementById('modal-overlay').style.display='none'">
@@ -2789,54 +2823,58 @@ window.openExpenseModal = function(envIdOrExpenseId = null, maybeExpenseId = nul
         </button>
       </div>
 
-      <form id="expense-modal-form" class="expense-smart-form" style="padding:0.5rem 0;display:flex;flex-direction:column;gap:0.95rem">
-        <div class="field">
-          <label class="field-label-step">
-            <span class="step-num">1</span>
-            SOBRE DEL QUE SE DESCONTARÁ EL DINERO
-          </label>
-          <select id="modal-exp-envelope" required>${envOpts}</select>
-        </div>
+      <form id="expense-modal-form" class="compact-form">
+        ${isContextual ? `
+          <div class="context-env-badge" style="border-left-color:${targetEnv.color || '#3b82f6'}">
+            <div class="context-env-left">
+              <span class="context-dot" style="background:${targetEnv.color || '#3b82f6'}"></span>
+              <span class="context-env-name">Sobre: <b>${targetEnv.name}</b></span>
+              ${targetEnv.bank ? `<span class="context-env-bank">${targetEnv.bank}</span>` : ''}
+            </div>
+            <span class="context-env-disp">Disp: <b>${money(getEnvelopeTotals(targetEnv).available)}</b></span>
+          </div>
+          <input type="hidden" id="modal-exp-envelope" value="${targetEnv.id}" />
+        ` : `
+          <div class="field">
+            <label>Sobre a debitar</label>
+            <select id="modal-exp-envelope" required>${envOpts}</select>
+          </div>
+        `}
 
         <div class="field">
-          <label class="field-label-step">
-            <span class="step-num">2</span>
-            MONTO DEL GASTO (₡)
-          </label>
-          <div class="amount-input-wrap">
-            <span class="currency-symbol">₡</span>
-            <input id="modal-exp-amount" type="text" inputmode="decimal" placeholder="0.00" value="${ex ? formatAmountString(ex.amount) : ''}" required autocomplete="off" />
+          <label>Concepto o descripción</label>
+          <input id="modal-exp-desc" placeholder="Ej. Taller mecánico, repuesto, compras..." value="${ex ? ex.desc : ''}" required />
+        </div>
+
+        <div class="form-row-2">
+          <div class="field">
+            <label>Monto (₡)</label>
+            <div class="amount-input-wrap">
+              <span class="currency-symbol">₡</span>
+              <input id="modal-exp-amount" type="text" inputmode="decimal" placeholder="0.00" value="${ex ? formatAmountString(ex.amount) : ''}" required autocomplete="off" />
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Fecha</label>
+            <input id="modal-exp-date" type="date" value="${ex ? ex.date : todayStr}" required />
           </div>
         </div>
 
-        <div class="field">
-          <label class="field-label-step">
-            <span class="step-num">3</span>
-            CONCEPTO O DESCRIPCIÓN DEL GASTO
-          </label>
-          <input id="modal-exp-desc" placeholder="Ej. Taller mecánico, repuesto, compras de súper..." value="${ex ? ex.desc : ''}" required />
-        </div>
-
-        <div class="field">
-          <label class="field-label-step">
-            <span class="step-num">4</span>
-            FECHA DEL GASTO
-          </label>
-          <input id="modal-exp-date" type="date" value="${ex ? ex.date : todayStr}" required />
-        </div>
-
         <!-- Live Simulation Box -->
-        <div id="modal-exp-sim-box" class="expense-sim-box" style="display:none"></div>
+        <div id="modal-exp-sim-box" class="expense-sim-box compact-sim" style="display:none"></div>
 
-        <div style="display:flex;justify-content:flex-end;gap:0.6rem;margin-top:0.4rem">
-          <button type="button" class="btn-ghost" id="expense-modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
-          <button type="submit" class="btn-primary">${isEdit ? 'Actualizar gasto' : 'Registrar gasto'}</button>
+        <div class="modal-actions-compact">
+          <button type="button" class="btn-ghost btn-sm" id="expense-modal-cancel" onclick="document.getElementById('modal-overlay').style.display='none'">Cancelar</button>
+          <button type="submit" class="btn-primary btn-sm">${isEdit ? 'Actualizar' : 'Registrar gasto'}</button>
         </div>
       </form>
     </div>
   `;
 
-  _buildCsel('modal-exp-envelope', {});
+  if (!isContextual) {
+    _buildCsel('modal-exp-envelope', {});
+  }
 
   const envSelect = $('modal-exp-envelope');
   const simBox = $('modal-exp-sim-box');
@@ -2865,8 +2903,8 @@ window.openExpenseModal = function(envIdOrExpenseId = null, maybeExpenseId = nul
     simBox.style.display = 'flex';
     simBox.innerHTML = `
       <div class="sim-row">
-        <span style="color:var(--text-2)">Saldo disponible en <b>${env.name}</b></span>
-        <span>${money(currentAvailable)}</span>
+        <span style="color:var(--text-2)">Saldo disponible:</span>
+        <span style="font-weight:600">${money(currentAvailable)}</span>
       </div>
       <div class="sim-row">
         <span style="font-weight:600;color:var(--text)">Balance resultante:</span>
@@ -2877,18 +2915,20 @@ window.openExpenseModal = function(envIdOrExpenseId = null, maybeExpenseId = nul
         </div>
       </div>
       ${isOver ? `
-        <div style="font-size:0.75rem;color:var(--danger);font-weight:500;margin-top:0.25rem;display:flex;align-items:center;gap:0.35rem">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Excede el saldo disponible del sobre por ${money(Math.abs(newAvailable))}.
+        <div style="font-size:0.75rem;color:var(--danger);font-weight:500;margin-top:0.2rem;display:flex;align-items:center;gap:0.35rem">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Excede el disponible por ${money(Math.abs(newAvailable))}.
         </div>
       ` : ''}
     `;
   }
 
-  envSelect.addEventListener('change', () => {
-    _refreshCsel('modal-exp-envelope');
-    updateModalSimulation();
-  });
+  if (!isContextual && envSelect && envSelect.tagName === 'SELECT') {
+    envSelect.addEventListener('change', () => {
+      _refreshCsel('modal-exp-envelope');
+      updateModalSimulation();
+    });
+  }
   amountInput.addEventListener('input', updateModalSimulation);
 
   updateModalSimulation();
@@ -2959,8 +2999,9 @@ window.openExpenseModal = function(envIdOrExpenseId = null, maybeExpenseId = nul
 
     overlay.style.display = 'none';
     renderAll();
-    if (preselectedEnvId) {
-      openEnvelopeDetail(preselectedEnvId);
+    const finalEnvId = preselectedEnvId || (currentTab === 'envelope-detail' ? currentEnvelopeDetailId : null);
+    if (finalEnvId) {
+      renderEnvelopeDetailPage(finalEnvId);
     }
   });
 };
