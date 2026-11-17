@@ -149,6 +149,23 @@ console.log('==========================================================');
 console.log(' EJECUTANDO SUITE INTEGRAL DE PRUEBAS DE BUDGETFLOW (1-12)');
 console.log('==========================================================\n');
 
+// Prueba de regresión: arranque con datos heredados en localStorage sin campo .id (evita TDZ de uid())
+console.log('--- Prueba Previa: Arranque con estado heredado en localStorage (sin .id en categorías/sobres) ---');
+const legacyEnv = createTestEnvironment({
+  bf_guest_mode: 'true',
+  budget_state_local: JSON.stringify({
+    envelopes: [{ name: 'Sobre Heredado', baseAmount: 50000 }],
+    categories: [{ name: 'Mi Categoría', color: '#ef4444' }],
+    incomes: [{ name: 'Ingreso Heredado', amount: 10000 }],
+    expenses: []
+  })
+});
+assert.strictEqual(legacyEnv.helpers.state.envelopes.length, 1, 'Sobre heredado cargado con éxito');
+assert.ok(legacyEnv.helpers.state.envelopes[0].id, 'Sobre heredado recibe id automáticamente');
+assert.strictEqual(legacyEnv.helpers.state.categories.length, 1, 'Categoría heredada personalizada conservada');
+assert.ok(legacyEnv.helpers.state.categories[0].id, 'Categoría heredada recibe id automáticamente');
+console.log('PASS: Arranque con datos previos en localStorage funciona sin errores.\n');
+
 const env = createTestEnvironment({ bf_guest_mode: 'true' });
 const h = env.helpers;
 

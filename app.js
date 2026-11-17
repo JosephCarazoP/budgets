@@ -12,6 +12,25 @@ const STATE_ROW_ID = 'default';
 window.STATE_ROW_ID = STATE_ROW_ID;
 
 /* ============================================================
+   CORE UTILITIES (DEFINIDOS AL INICIO PARA EVITAR TDZ)
+   ============================================================ */
+
+const $  = (id) => document.getElementById(id);
+const $$ = (sel, ctx = document) => ctx.querySelectorAll(sel);
+
+const money = (n) => `₡${Number(n || 0).toLocaleString('es-CR', { maximumFractionDigits: 2 })}`;
+const uid   = () => Math.random().toString(36).slice(2, 10);
+const fmt   = (iso) => { if (!iso) return '—'; const [y,m,d] = String(iso).split('-'); return (y && m && d) ? `${d}/${m}/${y}` : String(iso); };
+const compareByDateDesc = (a, b) => {
+  const dateA = String(a?.date || '0000-00-00');
+  const dateB = String(b?.date || '0000-00-00');
+  return dateB.localeCompare(dateA);
+};
+
+// ID único por pestaña/dispositivo — se regenera con cada recarga
+const _deviceId = Math.random().toString(36).slice(2, 8);
+
+/* ============================================================
    STATE
    ============================================================ */
 
@@ -66,6 +85,8 @@ if (!_initialCached) {
 
 const state = { ...INITIAL, ...(_initialCached || {}) };
 
+const LEGACY_AUTO_CAT_NAMES = new Set(['Alimentación', 'Mascotas', 'Transporte', 'Ahorro', 'Diversión']);
+
 function ensureEnvelopes() {
   if (!Array.isArray(state.envelopes)) state.envelopes = [];
   if (!Array.isArray(state.sources)) state.sources = [];
@@ -77,6 +98,16 @@ function ensureEnvelopes() {
   if (!Array.isArray(state.budgets)) state.budgets = [];
   if (!Array.isArray(state.periodLimits)) state.periodLimits = [];
   if (!Array.isArray(state.reserves)) state.reserves = [];
+
+  // Limpiar categorías predeterminadas antiguas si fueron autogeneradas y no tienen uso ni configuración
+  if (
+    state.categories.length === 5 &&
+    state.categories.every((c) => c && !c.id && !c.budget && !c.spendingLimit && !c.startDate && !c.endDate && LEGACY_AUTO_CAT_NAMES.has(c.name)) &&
+    !state.expenses.some((e) => e && e.category && LEGACY_AUTO_CAT_NAMES.has(e.category)) &&
+    !state.assignments.some((a) => a && a.category && LEGACY_AUTO_CAT_NAMES.has(a.category))
+  ) {
+    state.categories = [];
+  }
 
   // Sincronizar incomes y sources sin duplicados
   const incomeById = new Map();
@@ -234,7 +265,7 @@ function reconcileAssignmentsWithDistributions() {
    ============================================================ */
 
 const _supabaseReady = SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_KEY !== 'YOUR_SUPABASE_ANON_KEY';
-const db = _supabaseReady ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+const db = (_supabaseReady && window.supabase) ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 window.db = db;
 
 /** Carga el estado desde Supabase. Retorna true si tuvo éxito. */
@@ -287,12 +318,6 @@ function setupRealtime() {
 /* ============================================================
    UTILITIES
    ============================================================ */
-
-const $  = (id) => document.getElementById(id);
-const $$ = (sel, ctx = document) => ctx.querySelectorAll(sel);
-
-const money = (n) => `₡${Number(n || 0).toLocaleString('es-CR', { maximumFractionDigits: 2 })}`;
-const uid   = () => Math.random().toString(36).slice(2, 10);
 
 /**
  * Convierte cualquier valor (formateado o número) a un float de JavaScript válido.
@@ -412,15 +437,6 @@ function attachAmountFormatter(input) {
     }
   });
 }
-const fmt   = (iso) => { if (!iso) return '—'; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
-const compareByDateDesc = (a, b) => {
-  const dateA = String(a?.date || '0000-00-00');
-  const dateB = String(b?.date || '0000-00-00');
-  return dateB.localeCompare(dateA);
-};
-
-// ID único por pestaña/dispositivo — se regenera con cada recarga
-const _deviceId = Math.random().toString(36).slice(2, 8);
 
 /* ============================================================
    SYNC MANAGER (OFFLINE-FIRST & CLOUD SYNC ENGINE)
@@ -5885,42 +5901,47 @@ async function handleUserSession(user) {
 }
 
 (async () => {
-  applyTheme();
-  SyncManager.init();
+  try {
+    applyTheme();
+    SyncManager.init();
 
-  if (window.Auth && window.Auth._initInactivityTracker) {
-    window.Auth._initInactivityTracker();
-  }
+    if (window.Auth && window.Auth._initInactivityTracker) {
+      window.Auth._initInactivityTracker();
+    }
 
-  // Si el usuario estaba previamente en modo local/invitado
-  if (localStorage.getItem('bf_guest_mode') === 'true' && !window.FBAuth?.currentUser) {
-    window.startOfflineGuestMode();
-    return;
-  }
+    // Si el usuario estaba previamente en modo local/invitado
+    if (localStorage.getItem('bf_guest_mode') === 'true' && !window.FBAuth?.currentUser) {
+      window.startOfflineGuestMode();
+      return;
+    }
 
-  if (window.FBAuth) {
-    const initialized = await window.FBAuth.init();
-    if (initialized) {
-      window.FBAuth.onChange((user) => {
-        handleUserSession(user);
-      });
-    } else {
-      // Si no hay red o falta configurar Firebase, comprobar si hay usuario guardado previamente
-      const lastUser = window.FBAuth.getLastStoredUser();
-      if (lastUser) {
-        handleUserSession({ ...lastUser, isOffline: true });
-      } else if (localStorage.getItem('bf_guest_mode') === 'true') {
-        window.startOfflineGuestMode();
+    if (window.FBAuth) {
+      const initialized = await window.FBAuth.init();
+      if (initialized) {
+        window.FBAuth.onChange((user) => {
+          handleUserSession(user);
+        });
       } else {
-        if (window.Auth) {
+        // Si no hay red o falta configurar Firebase, comprobar si hay usuario guardado previamente
+        const lastUser = window.FBAuth.getLastStoredUser();
+        if (lastUser) {
+          handleUserSession({ ...lastUser, isOffline: true });
+        } else if (localStorage.getItem('bf_guest_mode') === 'true') {
+          window.startOfflineGuestMode();
+        } else if (window.Auth) {
           window.Auth.showAuthPortal({
             defaultTab: 'login',
             onAuthSuccess: (user) => handleUserSession(user)
           });
+        } else {
+          window.startOfflineGuestMode();
         }
       }
+    } else {
+      window.startOfflineGuestMode();
     }
-  } else {
-    _startApp();
+  } catch (err) {
+    console.error('BudgetFlow: Error en arranque inicial, activando interfaz de respaldo:', err);
+    window.startOfflineGuestMode();
   }
 })();
