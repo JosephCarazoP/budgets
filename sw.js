@@ -1,4 +1,4 @@
-const VERSION = 'v12';
+const VERSION = 'v13';
 const STATIC_CACHE = `budgetflow-static-${VERSION}`;
 const RUNTIME_CACHE = `budgetflow-runtime-${VERSION}`;
 
